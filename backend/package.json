@@ -1,0 +1,14 @@
+{
+  "name": "vaccine-reminder-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/api.test.js test/facilities.test.js test/seed.test.js",
+    "seed": "node src/seed.js"
+  }
+}
