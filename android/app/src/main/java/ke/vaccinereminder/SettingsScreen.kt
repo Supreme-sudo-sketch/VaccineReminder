@@ -57,6 +57,8 @@ fun SettingsScreen(
     s: Strings,
     lang: Lang,
     onLang: (Lang) -> Unit,
+    theme: ThemeMode,
+    onTheme: (ThemeMode) -> Unit,
     session: Session?,
     onBack: () -> Unit,
     onSignedOut: () -> Unit,
@@ -130,6 +132,10 @@ fun SettingsScreen(
 
             SettingsCard(s.language) {
                 LanguageChoice(lang, s, onLang)
+            }
+
+            SettingsCard(s.appearance) {
+                ThemeChoice(theme, s, onTheme)
             }
 
             if (session != null) {

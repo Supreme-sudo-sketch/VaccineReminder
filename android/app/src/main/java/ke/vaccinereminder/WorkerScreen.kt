@@ -92,6 +92,7 @@ fun WorkerHome(
     onOpenChild: (Int) -> Unit,
     onRegister: () -> Unit,
     onSettings: () -> Unit,
+    onVerifications: () -> Unit,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var childFilter by rememberSaveable { mutableStateOf("all") }
@@ -161,6 +162,7 @@ fun WorkerHome(
                     },
                     onShowFollowUp = { tab = 2 },
                     onOverdue = { overdue = it },
+                    onVerifications = onVerifications,
                 )
                 1 -> ChildrenTab(api, s, childFilter, onFilter = { childFilter = it }, onOpenChild = onOpenChild, onRegister = onRegister)
                 else -> FollowUpTab(api, s, onOpenChild = onOpenChild, onCount = { overdue = it })
@@ -178,6 +180,7 @@ private fun DashboardTab(
     onShowChildren: (String) -> Unit,
     onShowFollowUp: () -> Unit,
     onOverdue: (Int) -> Unit,
+    onVerifications: () -> Unit,
 ) {
     var stats by remember { mutableStateOf<Stats?>(null) }
     var due by remember { mutableStateOf<List<DueItem>>(emptyList()) }
@@ -253,18 +256,34 @@ private fun DashboardTab(
                         }
                     }
                 }
+                item { VerificationRequestsCard(st.pendingVerifications, s, onClick = onVerifications) }
                 item {
-                    RemindersCard(st.smsMode, running, s) {
-                        scope.launch {
-                            running = true
-                            try {
-                                notify(s.remindersProcessed(api.runReminders().processed))
-                                reload++
-                            } catch (e: ApiException) {
-                                notify(s.error(e))
-                            }
-                            running = false
-                        }
+                    var confirmRun by remember { mutableStateOf(false) }
+                    RemindersCard(st.smsMode, st.autoReminders, running, s) { confirmRun = true }
+                    // Each SMS costs airtime, so sending always asks first.
+                    if (confirmRun) {
+                        ConfirmDialog(
+                            title = s.confirmRunTitle,
+                            body = s.confirmRunBody,
+                            confirmLabel = s.send,
+                            s = s,
+                            icon = Icons.Filled.Sms,
+                            onDismiss = { confirmRun = false },
+                            onConfirm = {
+                                confirmRun = false
+                                scope.launch {
+                                    running = true
+                                    try {
+                                        val run = api.runReminders()
+                                        notify(s.remindersProcessed(run.processed, run.sent, run.waiting, run.failed))
+                                        reload++
+                                    } catch (e: ApiException) {
+                                        notify(s.error(e))
+                                    }
+                                    running = false
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -282,7 +301,7 @@ private fun DashboardTab(
 }
 
 @Composable
-private fun RemindersCard(smsMode: String, running: Boolean, s: Strings, onRun: () -> Unit) {
+private fun RemindersCard(smsMode: String, auto: Boolean, running: Boolean, s: Strings, onRun: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -292,7 +311,7 @@ private fun RemindersCard(smsMode: String, running: Boolean, s: Strings, onRun: 
                 val c = statusColors(if (smsMode == "live") "given" else "due")
                 Pill(s.smsModeName(smsMode), c.container, c.content)
             }
-            Text(s.remindersAuto, style = MaterialTheme.typography.bodyMedium)
+            Text(if (auto) s.remindersAuto else s.remindersManual, style = MaterialTheme.typography.bodyMedium)
             Text(
                 if (smsMode == "live") s.smsModeLive else s.smsModeTest,
                 style = MaterialTheme.typography.bodySmall,
@@ -349,6 +368,9 @@ private fun ChildrenTab(
     var loadedOnce by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
+    // When the rows came from the copy saved on this phone.
+    var savedAt by remember { mutableStateOf<Long?>(null) }
+    val repo = LocalChildren.current
     val focus = LocalFocusManager.current
 
     LaunchedEffect(query, filter, reload) {
@@ -356,7 +378,9 @@ private fun ChildrenTab(
         if (query.isNotBlank() && !refreshing) delay(300)
         loading = true
         try {
-            rows = api.listChildren(query.trim(), filter)
+            val loaded = repo.listChildren(query.trim(), filter)
+            rows = loaded.data
+            savedAt = loaded.savedAt
             error = null
         } catch (e: ApiException) {
             error = e
@@ -419,6 +443,7 @@ private fun ChildrenTab(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 error?.let { e -> item { MessageBanner(s.error(e), action = s.retry, onAction = { reload++ }) } }
+                savedAt?.let { t -> item { OfflineBanner(t, s) { reload++ } } }
                 if (!loadedOnce) item { LoadingBlock() }
                 if (loadedOnce && !loading && error == null && rows.isEmpty()) {
                     item {
@@ -462,7 +487,7 @@ private fun ChildRow(child: Child, s: Strings, onClick: () -> Unit) {
                     }
                 }
                 Text(
-                    "${child.caregiverName} · ${Phone.display(child.phone)}",
+                    s.parentLine(child.caregiverName, Phone.display(child.phone)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -516,19 +541,36 @@ private fun FollowUpTab(api: Api, s: Strings, onOpenChild: (Int) -> Unit, onCoun
         refreshing = false
     }
 
+    // The child whose SMS is waiting for the health worker to confirm.
+    var confirmFor by remember { mutableStateOf<MissedChild?>(null) }
     fun remind(item: MissedChild) {
         if (item.id in sending) return
         scope.launch {
             sending = sending + item.id
             try {
                 val r = api.remind(item.id)
-                notify(if (r.smsStatus == "sent") s.reminderSent else s.reminderTest)
+                notify(s.reminderOutcome(r.smsStatus))
                 reload++
             } catch (e: ApiException) {
                 notify(s.error(e))
             }
             sending = sending - item.id
         }
+    }
+
+    confirmFor?.let { item ->
+        ConfirmDialog(
+            title = s.confirmSmsTitle,
+            body = s.confirmSmsBody(item.caregiverName, Phone.display(item.phone)),
+            confirmLabel = s.send,
+            s = s,
+            icon = Icons.Filled.Sms,
+            onDismiss = { confirmFor = null },
+            onConfirm = {
+                confirmFor = null
+                remind(item)
+            },
+        )
     }
 
     PullToRefreshBox(
@@ -558,7 +600,7 @@ private fun FollowUpTab(api: Api, s: Strings, onOpenChild: (Int) -> Unit, onCoun
                     s = s,
                     sending = item.id in sending,
                     onCall = { dial(context, item.phone) },
-                    onSms = { remind(item) },
+                    onSms = { confirmFor = item },
                     onOpen = { onOpenChild(item.id) },
                 )
             }
@@ -576,7 +618,7 @@ private fun MissedCard(item: MissedChild, s: Strings, sending: Boolean, onCall: 
                 Column(Modifier.weight(1f)) {
                     Text(item.childName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "${item.caregiverName} · ${Phone.display(item.phone)}",
+                        s.parentLine(item.caregiverName, Phone.display(item.phone)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

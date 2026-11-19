@@ -96,6 +96,24 @@ private val AppTypography = Typography().let { t ->
     )
 }
 
+// Light or dark colours, chosen in Settings. SYSTEM follows the phone's own dark mode setting.
+enum class ThemeMode(val code: String) {
+    SYSTEM("system"),
+    LIGHT("light"),
+    DARK("dark");
+
+    @Composable
+    fun isDark(): Boolean = when (this) {
+        SYSTEM -> isSystemInDarkTheme()
+        LIGHT -> false
+        DARK -> true
+    }
+
+    companion object {
+        fun of(code: String) = entries.firstOrNull { it.code == code } ?: SYSTEM
+    }
+}
+
 @Composable
 fun AppTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     MaterialTheme(
@@ -118,5 +136,18 @@ fun statusColors(status: String): StatusColors {
         "due" -> if (dark) StatusColors(Color(0xFF4A3500), Color(0xFFFFD68A)) else StatusColors(Color(0xFFFFE8B3), Color(0xFF7A5200))
         "overdue" -> if (dark) StatusColors(Color(0xFF5C1712), Color(0xFFFFB4AB)) else StatusColors(Color(0xFFF9D4D1), Color(0xFF8C1D18))
         else -> if (dark) StatusColors(Color(0xFF2B3340), Color(0xFFC4CEDC)) else StatusColors(Color(0xFFE3E8EF), Color(0xFF3D4A5C))
+    }
+}
+
+// Colours for a vaccination verification status: grey before anything is sent, orange while a
+// health worker has not reviewed it, green once verified and red when rejected.
+@Composable
+fun verificationColors(status: String): StatusColors {
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return when (status) {
+        "pending" -> if (dark) StatusColors(Color(0xFF5A2D00), Color(0xFFFFB77C)) else StatusColors(Color(0xFFFFDDC1), Color(0xFF8A3D00))
+        "verified" -> statusColors("given")
+        "rejected" -> statusColors("overdue")
+        else -> statusColors("upcoming")
     }
 }

@@ -30,10 +30,20 @@ class Prefs(context: Context) {
         get() = sp.getString("language", "en") ?: "en"
         set(value) = sp.edit { putString("language", value) }
 
+    // "system", "light" or "dark". See ThemeMode.
+    var theme: String
+        get() = sp.getString("theme", ThemeMode.SYSTEM.code) ?: ThemeMode.SYSTEM.code
+        set(value) = sp.edit { putString("theme", value) }
+
     // Pre-fills the phone field on the login screen. Not secret: it is the worker's own number.
     var lastWorkerPhone: String
         get() = sp.getString("lastWorkerPhone", "") ?: ""
         set(value) = sp.edit { putString("lastWorkerPhone", value) }
+
+    // Highest health worker notification already shown, kept per server since each counts from 1.
+    var lastNotificationId: Long
+        get() = sp.getLong("lastNotificationId|$baseUrl", 0L)
+        set(value) = sp.edit { putLong("lastNotificationId|$baseUrl", value) }
 
     fun notifiedOn(day: String): Set<String> =
         (sp.getStringSet("notified", emptySet()) ?: emptySet()).filter { it.endsWith("|$day") }.toSet()
@@ -58,7 +68,9 @@ class Prefs(context: Context) {
 
 data class Session(val token: String, val worker: Worker)
 
-data class SavedLookup(val phone: String, val dob: String)
+// How a caregiver signs in for one child: the phone number, the child's name and date of birth, as
+// the clinic registered them.
+data class SavedLookup(val phone: String, val dob: String, val childName: String)
 
 // Values encrypted with an AES key that never leaves the Android Keystore. If the key is lost
 // (for example after a backup restore) reading returns null and the user simply logs in again.
@@ -131,11 +143,13 @@ class SecureStore(context: Context) {
         )
     }
 
-    // Phone number and date of birth a caregiver chose to remember, so the app opens on their child.
+    // Sign-ins a caregiver chose to remember, so the app opens on their children. Ones saved before the
+    // child's name was asked for are dropped, so the caregiver signs in once more.
     fun loadLookups(): List<SavedLookup> {
         val arr = get("lookups")?.let { runCatching { JSONArray(it) }.getOrNull() } ?: return emptyList()
         return (0 until arr.length()).mapNotNull { i ->
-            arr.optJSONObject(i)?.let { SavedLookup(it.optString("phone"), it.optString("dob")) }
+            arr.optJSONObject(i)?.let { SavedLookup(it.optString("phone"), it.optString("dob"), it.optString("childName")) }
+                ?.takeIf { it.childName.isNotBlank() }
         }
     }
 
@@ -145,7 +159,7 @@ class SecureStore(context: Context) {
             return
         }
         val arr = JSONArray()
-        list.distinct().take(MAX_LOOKUPS).forEach { arr.put(JSONObject().put("phone", it.phone).put("dob", it.dob)) }
+        list.distinct().take(MAX_LOOKUPS).forEach { arr.put(JSONObject().put("phone", it.phone).put("dob", it.dob).put("childName", it.childName)) }
         put("lookups", arr.toString())
     }
 

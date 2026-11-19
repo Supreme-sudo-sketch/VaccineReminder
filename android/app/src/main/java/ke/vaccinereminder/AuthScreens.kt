@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
@@ -243,16 +242,15 @@ fun SignUpScreen(api: Api, s: Strings, onBack: () -> Unit, onSignedIn: (Session)
             placeholder = s.phoneHint,
             keyboardType = KeyboardType.Phone,
         )
-        FormField(
+        FacilityField(
             value = facility,
-            onValueChange = {
+            onChange = {
                 facility = it
                 errors = errors - "facility"
             },
-            label = s.facility,
-            icon = Icons.Filled.LocalHospital,
+            api = api,
+            s = s,
             error = errors["facility"],
-            capitalization = KeyboardCapitalization.Words,
         )
         PasswordField(
             value = password,

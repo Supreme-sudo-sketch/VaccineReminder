@@ -7,8 +7,10 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "test": "node --test test/api.test.js test/facilities.test.js test/seed.test.js",
-    "seed": "node src/seed.js"
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "test": "node --test test/api.test.js test/facilities.test.js test/facilityList.test.js test/notifications.test.js test/seed.test.js test/sms.test.js test/verification.test.js",
+    "seed": "node --env-file-if-exists=.env src/seed.js",
+    "update-facilities": "node --env-file-if-exists=.env scripts/update-facility-list.js",
+    "check-sms": "node --env-file-if-exists=.env scripts/check-sms.js"
   }
 }

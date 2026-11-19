@@ -85,6 +85,27 @@ test('messages in both languages and reminder windows', () => {
   assert.match(buildMessage('before', 'sw', 'Amani', ['BCG'], '2026-11-01', 'Clinic'), /Kumbusho: Amani/);
   assert.match(buildMessage('followup', 'en', 'Amani', ['BCG'], '2026-11-01', ''), /Second reminder/);
   assert.match(buildMessage('followup', 'sw', 'Amani', ['BCG'], '2026-11-01', ''), /Kumbusho la pili/);
+  // Every reminder sends the caregiver to the child's hospital or the one nearest them, with the card.
+  assert.equal(
+    buildMessage('due', 'en', 'Amani', ['BCG'], '2026-11-01', 'Kenyatta National Hospital', 'Mbagathi County Hospital'),
+    'Today is vaccination day for Amani: BCG. Please go to Kenyatta National Hospital or Mbagathi County Hospital (the hospital nearest you) and carry the immunisation card.'
+  );
+  assert.equal(
+    buildMessage('due', 'en', 'Amani', ['BCG'], '2026-11-01', 'Kenyatta National Hospital'),
+    'Today is vaccination day for Amani: BCG. Please go to Kenyatta National Hospital or the hospital nearest you and carry the immunisation card.'
+  );
+  assert.equal(
+    buildMessage('due', 'sw', 'Amani', ['BCG'], '2026-11-01', 'Kenyatta', 'Mbagathi'),
+    'Leo ni siku ya chanjo ya Amani: BCG. Tafadhali fika Kenyatta au Mbagathi (hospitali iliyo karibu nawe), na ubebe kadi ya chanjo.'
+  );
+  // The same hospital twice is named once; with none recorded, the nearest one will do.
+  assert.match(buildMessage('due', 'en', 'Amani', ['BCG'], '2026-11-01', 'Mbagathi', 'mbagathi'), /go to Mbagathi or the hospital nearest you and/);
+  assert.match(buildMessage('overdue', 'en', 'Amani', ['BCG'], '2026-11-01', '', ''), /Please go to the hospital nearest you as soon as you can and carry the immunisation card\./);
+  assert.match(buildMessage('before', 'sw', 'Amani', ['BCG'], '2026-11-01', '', 'Mbagathi'), /fika Mbagathi \(hospitali iliyo karibu nawe\), na ubebe kadi ya chanjo\.$/);
+  for (const kind of ['before', 'due', 'overdue', 'followup']) {
+    assert.match(buildMessage(kind, 'en', 'Amani', ['BCG'], '2026-11-01', 'Kangemi'), /Kangemi or the hospital nearest you.*carry the immunisation card/);
+    assert.match(buildMessage(kind, 'sw', 'Amani', ['BCG'], '2026-11-01', 'Kangemi'), /Kangemi au hospitali iliyo karibu nawe.*ubebe kadi ya chanjo/);
+  }
   assert.equal(kindFor(4), null);
   assert.equal(kindFor(3).kind, 'before');
   assert.equal(kindFor(1).kind, 'before');
@@ -292,14 +313,19 @@ test('record several past doses at once', async () => {
   }
 });
 
-test('caregiver lookup needs matching phone and date of birth', async () => {
+test('caregiver lookup needs matching phone, child name and date of birth', async () => {
   const { server, call } = await setup();
   try {
     await call('POST', '/children', child);
-    const miss = await call('POST', '/caregiver/lookup', { phone: '0712345678', childDob: '2026-01-01' }, null);
+    const miss = await call('POST', '/caregiver/lookup', { phone: '0712345678', childDob: '2026-01-01', childName: 'Amani' }, null);
     assert.equal(miss.status, 404);
-    assert.equal((await call('POST', '/caregiver/lookup', { phone: '07', childDob: '2026-09-13' }, null)).json.field, 'phone');
-    const hit = await call('POST', '/caregiver/lookup', { phone: '+254712345678', childDob: '2026-09-13' }, null);
+    assert.equal((await call('POST', '/caregiver/lookup', { phone: '07', childDob: '2026-09-13', childName: 'Amani' }, null)).json.field, 'phone');
+    const noName = await call('POST', '/caregiver/lookup', { phone: '0712345678', childDob: '2026-09-13' }, null);
+    assert.equal(noName.status, 400);
+    assert.equal(noName.json.field, 'childName');
+    const wrongName = await call('POST', '/caregiver/lookup', { phone: '0712345678', childDob: '2026-09-13', childName: 'Baraka' }, null);
+    assert.equal(wrongName.status, 404, "the right phone and date of birth are not enough without the child's name");
+    const hit = await call('POST', '/caregiver/lookup', { phone: '+254712345678', childDob: '2026-09-13', childName: '  amani ' }, null);
     assert.equal(hit.status, 200);
     assert.equal(hit.json.children[0].childName, 'Amani');
     assert.equal(hit.json.children[0].smsHistory, undefined);
@@ -314,9 +340,9 @@ test('caregiver lookup slows down guessing for one phone number', async () => {
     await call('POST', '/children', child);
     for (let i = 1; i <= 10; i++) {
       const dob = `2026-01-${String(i).padStart(2, '0')}`;
-      assert.equal((await call('POST', '/caregiver/lookup', { phone: child.phone, childDob: dob }, null)).status, 404);
+      assert.equal((await call('POST', '/caregiver/lookup', { phone: child.phone, childDob: dob, childName: child.childName }, null)).status, 404);
     }
-    const blocked = await call('POST', '/caregiver/lookup', { phone: child.phone, childDob: child.dob }, null);
+    const blocked = await call('POST', '/caregiver/lookup', { phone: child.phone, childDob: child.dob, childName: child.childName }, null);
     assert.equal(blocked.status, 429);
   } finally {
     server.close();
@@ -455,12 +481,13 @@ test('reminders run once per milestone, one SMS per child per day, and skip give
     assert.equal(manual.status, 200);
     assert.equal(manual.json.kind, 'overdue');
     assert.equal(manual.json.smsStatus, 'dry-run');
+    // A health worker can send again whenever they choose.
     const again = await call('POST', `/children/${c.id}/remind`);
-    assert.equal(again.status, 429);
-    assert.equal(again.json.code, 'recently_reminded');
+    assert.equal(again.status, 200);
+    assert.equal(again.json.kind, 'overdue');
 
     const detail = (await call('GET', `/children/${c.id}`)).json;
-    assert.equal(detail.smsHistory.length, 4);
+    assert.equal(detail.smsHistory.length, 5);
     assert.equal(detail.smsHistory[0].kind, 'manual');
   } finally {
     today = '2026-10-25';
@@ -552,7 +579,9 @@ test('opens a database made by the first version and upgrades it', () => {
     assert.ok(cols('reminders').includes('run_date'));
     assert.ok(cols('workers').includes('password_hash'));
     assert.ok(['area_lat', 'area_lon', 'area_label', 'area_saved_at'].every((c) => cols('children').includes(c)));
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2);
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3);
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => t.name);
+    assert.ok(['vaccination_verifications', 'verification_documents', 'verification_events'].every((t) => tables.includes(t)));
     assert.equal(db.prepare("SELECT due_date FROM doses WHERE code = 'PENTA2'").get().due_date, '2026-04-09');
     assert.equal(db.prepare('SELECT child_name FROM children').get().child_name, 'Old');
   } finally {
@@ -591,5 +620,44 @@ test("Africa's Talking replies are checked per recipient", async () => {
     restore('AT_API_KEY', saved.key);
     globalThis.fetch = saved.fetch;
     db.close();
+  }
+});
+
+test('twins and siblings share the parent details and are listed together', async () => {
+  const { server, call } = await setup();
+  try {
+    const first = (await call('POST', '/children', { ...child, childName: 'Faith' })).json;
+    assert.equal((await call('POST', '/children', { ...child, childName: 'Hope' })).status, 201, 'a twin: same parent and date of birth');
+    assert.equal((await call('POST', '/children', { ...child, childName: 'faith' })).status, 409, 'but not the same child twice');
+    assert.equal((await call('POST', '/children', { ...child, childName: 'Baraka', dob: '2026-01-20' })).status, 201);
+    assert.equal((await call('POST', '/children', { ...child, childName: 'Neema', phone: '0722333444' })).status, 201);
+    const view = (await call('GET', `/children/${first.id}`)).json;
+    assert.deepEqual(view.siblings.map((x) => [x.childName, x.twin]), [['Baraka', false], ['Hope', true]]);
+    // The caregiver finds each twin by their own name; a brother or sister by their own date of birth.
+    const find = async (childName, childDob = child.dob) =>
+      (await call('POST', '/caregiver/lookup', { phone: child.phone, childDob, childName }, null)).json.children || [];
+    assert.deepEqual((await find('Hope')).map((c) => c.childName), ['Hope']);
+    assert.deepEqual((await find('faith')).map((c) => c.childName), ['Faith']);
+    assert.deepEqual((await find('Baraka', '2026-01-20')).map((c) => c.childName), ['Baraka']);
+    assert.deepEqual(await find('Baraka'), [], 'not with a twin\'s date of birth');
+    assert.equal('siblings' in (await find('Hope'))[0], false, 'the caregiver lookup does not list other children');
+  } finally {
+    server.close();
+  }
+});
+
+test('the nearest hospital is saved with the child and named in the SMS', async () => {
+  const { db, server, call } = await setup();
+  try {
+    const c = (await call('POST', '/children', { ...child, nearestHospital: '  Mbagathi County Hospital ' })).json;
+    assert.equal(c.nearestHospital, 'Mbagathi County Hospital');
+    const sent = await call('POST', `/children/${c.id}/remind`);
+    assert.equal(sent.status, 200);
+    assert.match(sent.json.message, /fika Kangemi Health Centre au Mbagathi County Hospital \(hospitali iliyo karibu nawe\).*ubebe kadi ya chanjo/);
+    const edited = (await call('PATCH', `/children/${c.id}`, { nearestHospital: 'Pumwani Maternity Hospital' })).json;
+    assert.equal(edited.nearestHospital, 'Pumwani Maternity Hospital');
+    assert.match(db.prepare('SELECT message FROM sms_log ORDER BY id DESC').get().message, /Mbagathi County Hospital/);
+  } finally {
+    server.close();
   }
 });

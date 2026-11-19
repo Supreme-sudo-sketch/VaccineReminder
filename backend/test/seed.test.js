@@ -62,12 +62,13 @@ test('demo data shows each situation through the real API', async () => {
 
     const kioko = DEMO_CHILDREN.find((c) => c.childName.startsWith('Kioko'));
     const twins = DEMO_CHILDREN.find((c) => c.childName.startsWith('Faith'));
-    const lookup = async (c) => (await call('POST', '/caregiver/lookup', { phone: c.phone, childDob: addDays(today, -c.ageDays) }, null)).json;
-    assert.equal((await lookup(twins)).children.length, 2);
+    const lookup = async (c) => (await call('POST', '/caregiver/lookup', { phone: c.phone, childDob: addDays(today, -c.ageDays), childName: c.childName.split(' ')[0] }, null)).json;
+    // Twins share a phone and date of birth; each is found by their own name.
+    assert.deepEqual((await lookup(twins)).children.map((c) => c.childName), [twins.childName]);
     assert.equal((await lookup(kioko)).children[0].savedArea.label, 'Mombasa');
 
     const missed = (await call('GET', '/missed')).json.children.map((c) => c.childName.split(' ')[0]);
-    assert.deepEqual(missed.sort(), ['Imani', 'Jabari', 'Otieno', 'Zawadi']);
+    assert.deepEqual(missed.sort(), ['Imani', 'Jabari', 'Liam', 'Otieno', 'Zawadi']);
 
     const sent = (await call('POST', '/reminders/run')).json.sent;
     const kinds = Object.fromEntries(sent.map((r) => [r.childName.split(' ')[0], r.kind]));
@@ -80,6 +81,9 @@ test('demo data shows each situation through the real API', async () => {
       Faith: 'due',
       Hope: 'due',
       Kioko: 'before',
+      Tumaini: 'due',
+      Zuri: 'due',
+      Liam: 'overdue',
     });
     const kiokoSms = db.prepare('SELECT message FROM sms_log WHERE child_id = ? ORDER BY id DESC').get(byName.Kioko.id).message;
     assert.match(kiokoSms, /Tudor Clinic/);

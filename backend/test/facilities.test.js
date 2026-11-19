@@ -277,7 +277,7 @@ test('caregiver saves, reads and deletes the area used for reminders', async () 
   const { server, call } = await setup(fetchImpl);
   try {
     const c = (await call('POST', '/children', child)).json;
-    const who = { phone: child.phone, childDob: child.dob };
+    const who = { phone: child.phone, childDob: child.dob, childName: child.childName };
 
     assert.equal((await call('POST', '/caregiver/location', { ...who, childDob: '2026-01-01', lat: 1, lon: 1 }, null)).status, 404);
     assert.equal((await call('POST', '/caregiver/location', { ...who, lat: 'x', lon: 39 }, null)).json.field, 'lat');
@@ -311,7 +311,7 @@ test('reminder SMS lists the 2 nearest hospitals, asks to call first, and hides 
   const { db, server, call } = await setup(fetchImpl);
   try {
     const c = (await call('POST', '/children', child)).json;
-    const area = (await call('POST', '/caregiver/location', { phone: child.phone, childDob: child.dob, lat: HOME.lat, lon: HOME.lon, label: 'Mombasa' }, null)).json.savedArea;
+    const area = (await call('POST', '/caregiver/location', { phone: child.phone, childDob: child.dob, childName: child.childName, lat: HOME.lat, lon: HOME.lon, label: 'Mombasa' }, null)).json.savedArea;
 
     const run = await call('POST', '/reminders/run');
     assert.equal(run.json.sent.length, 1);
@@ -345,7 +345,7 @@ test('reminders still go out when OpenStreetMap fails, without retrying for ever
   try {
     for (const [name, phone] of [['Amani', '0712345678'], ['Baraka', '0799111222']]) {
       await call('POST', '/children', { ...child, childName: name, phone });
-      await call('POST', '/caregiver/location', { phone, childDob: child.dob, lat: HOME.lat, lon: HOME.lon }, null);
+      await call('POST', '/caregiver/location', { phone, childDob: child.dob, childName: name, lat: HOME.lat, lon: HOME.lon }, null);
     }
     const run = await call('POST', '/reminders/run');
     assert.equal(run.json.sent.length, 2);
@@ -362,7 +362,7 @@ test('a saved area is deleted after 14 days and no longer used', async () => {
   const { db, server, call } = await setup(fetchImpl);
   try {
     await call('POST', '/children', child);
-    const who = { phone: child.phone, childDob: child.dob };
+    const who = { phone: child.phone, childDob: child.dob, childName: child.childName };
     await call('POST', '/caregiver/location', { ...who, lat: HOME.lat, lon: HOME.lon, label: 'Mombasa' }, null);
     db.exec("UPDATE children SET area_saved_at = datetime('now', '-15 days')");
 
