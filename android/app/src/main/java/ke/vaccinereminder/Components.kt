@@ -374,6 +374,19 @@ fun MessageBanner(
     }
 }
 
+// Above a list or record that came from the copy saved on this phone, because the server could not be reached.
+@Composable
+fun OfflineBanner(savedAt: Long, s: Strings, modifier: Modifier = Modifier, onRetry: () -> Unit) {
+    MessageBanner(
+        s.offlineCopy(formatSavedAt(savedAt, s.lang)),
+        modifier,
+        kind = BannerKind.WARNING,
+        title = s.offlineTitle,
+        action = s.retry,
+        onAction = onRetry,
+    )
+}
+
 @Composable
 fun EmptyState(
     icon: ImageVector,
@@ -510,6 +523,20 @@ fun LanguageChoice(lang: Lang, s: Strings, onSelect: (Lang) -> Unit, modifier: M
 }
 
 @Composable
+fun ThemeChoice(mode: ThemeMode, s: Strings, onSelect: (ThemeMode) -> Unit, modifier: Modifier = Modifier) {
+    SegmentedChoice(
+        options = listOf(
+            ThemeMode.SYSTEM.code to s.themeSystem,
+            ThemeMode.LIGHT.code to s.themeLight,
+            ThemeMode.DARK.code to s.themeDark,
+        ),
+        selected = mode.code,
+        onSelect = { onSelect(ThemeMode.of(it)) },
+        modifier = modifier,
+    )
+}
+
+@Composable
 fun ConfirmDialog(
     title: String,
     body: String,
@@ -540,17 +567,31 @@ fun ConfirmDialog(
 }
 
 @Composable
-fun DoseTimeline(doses: List<Dose>, s: Strings, modifier: Modifier = Modifier, action: (@Composable (Dose) -> Unit)? = null) {
+// `below` adds content under a dose's line, such as the evidence a caregiver sent for it.
+fun DoseTimeline(
+    doses: List<Dose>,
+    s: Strings,
+    modifier: Modifier = Modifier,
+    below: (@Composable (Dose) -> Unit)? = null,
+    action: (@Composable (Dose) -> Unit)? = null,
+) {
     val groups = remember(doses) { groupVisits(doses) }
     Column(modifier) {
         groups.forEachIndexed { index, group ->
-            TimelineItem(group, s, isFirst = index == 0, isLast = index == groups.lastIndex, action = action)
+            TimelineItem(group, s, isFirst = index == 0, isLast = index == groups.lastIndex, action = action, below = below)
         }
     }
 }
 
 @Composable
-private fun TimelineItem(group: VisitGroup, s: Strings, isFirst: Boolean, isLast: Boolean, action: (@Composable (Dose) -> Unit)?) {
+private fun TimelineItem(
+    group: VisitGroup,
+    s: Strings,
+    isFirst: Boolean,
+    isLast: Boolean,
+    action: (@Composable (Dose) -> Unit)?,
+    below: (@Composable (Dose) -> Unit)?,
+) {
     val colors = statusColors(group.status)
     val line = MaterialTheme.colorScheme.outlineVariant
     val pending = group.pendingDate
@@ -587,7 +628,7 @@ private fun TimelineItem(group: VisitGroup, s: Strings, isFirst: Boolean, isLast
                 Column {
                     group.doses.forEachIndexed { i, dose ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        DoseLine(dose, s, action)
+                        DoseLine(dose, s, action, below)
                     }
                 }
             }
@@ -596,7 +637,15 @@ private fun TimelineItem(group: VisitGroup, s: Strings, isFirst: Boolean, isLast
 }
 
 @Composable
-private fun DoseLine(dose: Dose, s: Strings, action: (@Composable (Dose) -> Unit)?) {
+private fun DoseLine(dose: Dose, s: Strings, action: (@Composable (Dose) -> Unit)?, below: (@Composable (Dose) -> Unit)?) {
+    Column(Modifier.fillMaxWidth()) {
+        DoseRow(dose, s, action)
+        if (below != null) below(dose)
+    }
+}
+
+@Composable
+private fun DoseRow(dose: Dose, s: Strings, action: (@Composable (Dose) -> Unit)?) {
     Row(
         Modifier
             .fillMaxWidth()

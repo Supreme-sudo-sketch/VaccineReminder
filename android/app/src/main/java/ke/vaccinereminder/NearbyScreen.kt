@@ -147,7 +147,7 @@ fun NearbyScreen(api: Api, s: Strings, lookups: List<SavedLookup>, onBack: () ->
     LaunchedEffect(lookups) {
         val first = lookups.firstOrNull() ?: return@LaunchedEffect
         savedArea = try {
-            api.lookup(first.phone, first.dob).firstNotNullOfOrNull { it.savedArea }
+            api.lookup(first).firstNotNullOfOrNull { it.savedArea }
         } catch (e: ApiException) {
             null
         }
@@ -239,7 +239,7 @@ fun NearbyScreen(api: Api, s: Strings, lookups: List<SavedLookup>, onBack: () ->
             try {
                 var result: SavedArea? = null
                 lookups.forEach { l ->
-                    result = api.saveArea(l.phone, l.dob, if (on) lat else null, if (on) lon else null, if (on) areaLabel else null)
+                    result = api.saveArea(l, if (on) lat else null, if (on) lon else null, if (on) areaLabel else null)
                 }
                 savedArea = result
                 notify(if (on) s.areaSaved else s.areaDeleted)

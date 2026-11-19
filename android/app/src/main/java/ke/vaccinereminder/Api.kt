@@ -32,9 +32,87 @@ data class Dose(
     val dueDate: String,
     val givenDate: String?,
     val status: String,
+    // Evidence a caregiver sent for this dose, if any.
+    val verification: DoseVerification? = null,
+)
+
+// status is "pending", "verified" or "rejected"; no evidence at all means "not submitted".
+data class DoseVerification(
+    val id: Int,
+    val status: String,
+    val rejectionReason: String?,
+    val vaccinationDate: String = "",
+    val hospital: String = "",
+    val submittedAt: String = "",
+    val hasCard: Boolean = false,
+    val hasNote: Boolean = false,
+    // Only sent to health workers: the pictures, shown under the dose in the child's record.
+    val documents: List<EvidenceDocument> = emptyList(),
+)
+
+// A caregiver's evidence that a dose was given elsewhere. The fields after hasNote are only filled
+// in for health workers.
+data class Verification(
+    val id: Int,
+    val childId: Int,
+    val childName: String,
+    val doseCode: String,
+    val doseName: String,
+    val vaccinationDate: String,
+    val hospital: String,
+    val doctorName: String,
+    val status: String,
+    val submittedAt: String,
+    val submissionCount: Int,
+    val reviewedAt: String?,
+    val rejectionReason: String?,
+    val hasCard: Boolean,
+    val hasNote: Boolean,
+    val milestone: String = "",
+    val reviewedBy: String? = null,
+    val documentCount: Int = 0,
+    val child: VerificationChild? = null,
+    val dose: DoseState? = null,
+    val documents: List<EvidenceDocument> = emptyList(),
+    val history: List<VerificationEvent> = emptyList(),
+    val warnings: List<VerificationWarning> = emptyList(),
+)
+
+data class VerificationChild(val id: Int, val childName: String, val dob: String, val caregiverName: String, val phone: String, val facility: String)
+
+// The dose as the record shows it now, next to what the evidence claims.
+data class DoseState(val dueDate: String, val givenDate: String?, val status: String)
+
+data class EvidenceDocument(val id: Int, val kind: String, val mimeType: String, val size: Int)
+
+data class VerificationEvent(val action: String, val at: String, val by: String?, val detail: String?)
+
+data class VerificationWarning(val code: String, val text: String)
+
+data class VerificationList(val items: List<Verification>, val pending: Int, val reviewed: Int)
+
+data class CaregiverEvidence(val children: List<Child>, val verifications: List<Verification>)
+
+// What the caregiver typed for one request; card and note are the refs of uploaded pictures.
+data class EvidenceInput(
+    val childId: Int,
+    val doseCode: String,
+    val vaccinationDate: String,
+    val hospital: String,
+    val doctorName: String,
+    val cardDocument: String?,
+    val noteDocument: String?,
 )
 
 data class SmsEntry(val kind: String, val status: String, val message: String, val sentAt: String)
+
+// A notification a health worker sent to the caregiver's app. deliveredAt is when the app collected it.
+data class AppNotification(val message: String, val sentAt: String, val deliveredAt: String?, val sentBy: String?)
+
+data class NotifyResult(val notification: AppNotification, val appSeenAt: String?)
+
+// A notification the caregiver's app collects from the server. from is the clinic that sent it.
+data class IncomingNotification(val id: Long, val childId: Int, val childName: String, val message: String, val from: String?)
 
 data class Child(
     val id: Int,
@@ -46,6 +124,8 @@ data class Child(
     val facility: String,
     val consent: Boolean,
     val nextDueDate: String?,
+    // The hospital nearest the family's home, named in SMS ("" if not recorded).
+    val nearestHospital: String = "",
     val nextVaccines: List<String>,
     val overdueCount: Int,
     val givenCount: Int,
@@ -53,7 +133,15 @@ data class Child(
     val doses: List<Dose>,
     val smsHistory: List<SmsEntry>,
     val savedArea: SavedArea? = null,
+    val appNotifications: List<AppNotification> = emptyList(),
+    // When a caregiver's app last checked in for this child; null if none ever has.
+    val appSeenAt: String? = null,
+    // Other children with the same parent's phone number (health workers only).
+    val siblings: List<Sibling> = emptyList(),
 )
+
+// A brother, sister or twin (twin: same date of birth).
+data class Sibling(val id: Int, val childName: String, val dob: String, val twin: Boolean)
 
 data class SavedArea(val label: String, val lat: Double, val lon: Double, val expiresOn: String)
 
@@ -69,6 +157,12 @@ data class Facility(
 
 data class Place(val label: String, val name: String, val lat: Double, val lon: Double)
 
+// A facility to pick when registering. type is "hospital", "health_centre", "clinic", or "in_use"
+// for a name that is only known because someone in this system already entered it.
+data class FacilityChoice(val name: String, val type: String, val county: String?)
+
+data class FacilityChoices(val facilities: List<FacilityChoice>, val more: Boolean)
+
 data class NearbyResult(val kind: String, val maxSearchKm: Int, val facilities: List<Facility>)
 
 data class ChildInput(
@@ -79,6 +173,7 @@ data class ChildInput(
     val language: String,
     val facility: String,
     val consent: Boolean,
+    val nearestHospital: String = "",
 )
 
 data class MissedChild(
@@ -110,13 +205,18 @@ data class Stats(
     val givenLast30Days: Int,
     val smsLast7Days: Int,
     val smsMode: String,
+    val pendingVerifications: Int = 0,
+    // False when SMS only go out when a health worker sends them.
+    val autoReminders: Boolean = true,
 )
 
 data class ServerInfo(val today: String, val smsMode: String)
 
 data class ReminderResult(val kind: String, val smsStatus: String)
 
-data class RunResult(val processed: Int, val smsMode: String)
+// processed counts every reminder; sent only those that really went out by SMS (not demo or test ones).
+// waiting: handed to the SMS phone, which had not confirmed sending them yet.
+data class RunResult(val processed: Int, val sent: Int, val smsMode: String, val waiting: Int = 0, val failed: Int = 0)
 
 private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else optString(key)
 
@@ -143,9 +243,11 @@ class Api(
         auth: Boolean = true,
         base: String? = null,
         readTimeoutMs: Int = 20000,
-    ): JSONObject {
+    ): JSONObject = onIo(auth) { send(method, path, body, auth, base ?: baseUrl(), readTimeoutMs) }
+
+    private suspend fun <T> onIo(auth: Boolean, block: () -> T): T {
         try {
-            return withContext(Dispatchers.IO) { send(method, path, body, auth, base ?: baseUrl(), readTimeoutMs) }
+            return withContext(Dispatchers.IO) { block() }
         } catch (e: ApiException) {
             // Back on the caller's thread here, so the app can safely drop the session and show the login screen.
             if (auth && e.status == 401) onUnauthorized()
@@ -153,7 +255,34 @@ class Api(
         }
     }
 
-    private fun send(method: String, path: String, body: JSONObject?, auth: Boolean, base: String, readTimeoutMs: Int): JSONObject {
+    private fun send(method: String, path: String, body: JSONObject?, auth: Boolean, base: String, readTimeoutMs: Int): JSONObject =
+        exchange(path, base, configure = { conn ->
+            // HttpURLConnection cannot send PATCH; the server accepts POST with an override header.
+            if (method == "PATCH") {
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("X-HTTP-Method-Override", "PATCH")
+            } else {
+                conn.requestMethod = method
+            }
+            conn.readTimeout = readTimeoutMs
+            conn.setRequestProperty("Accept", "application/json")
+            val t = token()
+            if (auth && t != null) conn.setRequestProperty("Authorization", "Bearer $t")
+            if (body != null) {
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            }
+        }) { conn -> readJson(conn) }
+
+    private fun readJson(conn: HttpURLConnection): JSONObject {
+        val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        return if (text.isBlank()) JSONObject() else JSONObject(text)
+    }
+
+    // Opens a connection to base + path, lets configure() set it up and send any body, and reads a
+    // successful reply with read(). Failures become ApiExceptions the screens know how to show.
+    private fun <T> exchange(path: String, base: String, configure: (HttpURLConnection) -> Unit, read: (HttpURLConnection) -> T): T {
         val trimmed = base.trim().trimEnd('/')
         if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
             throw ApiException(ApiException.Kind.BAD_ADDRESS, "Server address must start with http:// or https://")
@@ -166,28 +295,12 @@ class Api(
             throw ApiException(ApiException.Kind.BAD_ADDRESS, "Invalid server address")
         }
         try {
-            // HttpURLConnection cannot send PATCH; the server accepts POST with an override header.
-            if (method == "PATCH") {
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("X-HTTP-Method-Override", "PATCH")
-            } else {
-                conn.requestMethod = method
-            }
             conn.connectTimeout = 10000
-            conn.readTimeout = readTimeoutMs
-            conn.setRequestProperty("Accept", "application/json")
-            val t = token()
-            if (auth && t != null) conn.setRequestProperty("Authorization", "Bearer $t")
-            if (body != null) {
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            }
+            configure(conn)
             val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-            val json = if (text.isBlank()) JSONObject() else JSONObject(text)
             if (code !in 200..299) {
+                val text = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                val json = if (text.isBlank()) JSONObject() else JSONObject(text)
                 throw ApiException(
                     kind = ApiException.Kind.SERVER,
                     message = json.optString("error").ifBlank { "Error $code" },
@@ -196,7 +309,7 @@ class Api(
                     field = json.stringOrNull("field"),
                 )
             }
-            return json
+            return read(conn)
         } catch (e: ApiException) {
             throw e
         } catch (e: JSONException) {
@@ -217,6 +330,19 @@ class Api(
                 dueDate = d.getString("dueDate"),
                 givenDate = d.stringOrNull("givenDate"),
                 status = d.getString("status"),
+                verification = d.optJSONObject("verification")?.let { v ->
+                    DoseVerification(
+                        id = v.getInt("id"),
+                        status = v.getString("status"),
+                        rejectionReason = v.stringOrNull("rejectionReason"),
+                        vaccinationDate = v.optString("vaccinationDate"),
+                        hospital = v.optString("hospital"),
+                        submittedAt = v.optString("submittedAt"),
+                        hasCard = v.optBoolean("hasCard"),
+                        hasNote = v.optBoolean("hasNote"),
+                        documents = v.optJSONArray("documents").mapObjects { doc -> EvidenceDocument(doc.getInt("id"), doc.getString("kind"), "", 0) },
+                    )
+                },
             )
         }
         val history = j.optJSONArray("smsHistory").mapObjects { h ->
@@ -231,6 +357,7 @@ class Api(
             dob = j.getString("dob"),
             language = j.optString("language", "en"),
             facility = j.optString("facility", ""),
+            nearestHospital = j.optString("nearestHospital", ""),
             consent = j.optBoolean("consent", true),
             nextDueDate = j.stringOrNull("nextDueDate"),
             nextVaccines = if (next == null) emptyList() else (0 until next.length()).map { next.getString(it) },
@@ -240,8 +367,14 @@ class Api(
             doses = doses,
             smsHistory = history,
             savedArea = j.optJSONObject("savedArea")?.let(::parseArea),
+            appNotifications = j.optJSONArray("appNotifications").mapObjects(::parseAppNotification),
+            appSeenAt = j.stringOrNull("appSeenAt"),
+            siblings = j.optJSONArray("siblings").mapObjects { Sibling(it.getInt("id"), it.optString("childName"), it.optString("dob"), it.optBoolean("twin")) },
         )
     }
+
+    private fun parseAppNotification(n: JSONObject) =
+        AppNotification(n.optString("message"), n.optString("sentAt"), n.stringOrNull("deliveredAt"), n.stringOrNull("sentBy"))
 
     private fun parseArea(a: JSONObject) =
         SavedArea(a.optString("label"), a.getDouble("lat"), a.getDouble("lon"), a.optString("expiresOn"))
@@ -270,8 +403,19 @@ class Api(
             .getJSONArray("results")
             .mapObjects { p -> Place(p.getString("label"), p.optString("name"), p.getDouble("lat"), p.getDouble("lon")) }
 
-    suspend fun saveArea(phone: String, childDob: String, lat: Double?, lon: Double?, label: String?): SavedArea? {
-        val body = JSONObject().put("phone", phone).put("childDob", childDob)
+    suspend fun facilityChoices(query: String): FacilityChoices {
+        val j = request("GET", "/facilities/list?q=" + URLEncoder.encode(query, "UTF-8"), auth = false)
+        return FacilityChoices(
+            facilities = j.optJSONArray("facilities").mapObjects { FacilityChoice(it.getString("name"), it.optString("type"), it.stringOrNull("county")) },
+            more = j.optBoolean("more"),
+        )
+    }
+
+    // What every caregiver request carries to show who is asking.
+    private fun SavedLookup.json() = JSONObject().put("phone", phone).put("childDob", dob).put("childName", childName)
+
+    suspend fun saveArea(who: SavedLookup, lat: Double?, lon: Double?, label: String?): SavedArea? {
+        val body = who.json()
         if (lat == null || lon == null) {
             body.put("lat", JSONObject.NULL)
         } else {
@@ -312,8 +456,8 @@ class Api(
         request("POST", "/auth/password", JSONObject().put("currentPassword", current).put("newPassword", new))
     }
 
-    suspend fun lookup(phone: String, childDob: String): List<Child> {
-        val body = JSONObject().put("phone", phone).put("childDob", childDob)
+    suspend fun lookup(who: SavedLookup): List<Child> {
+        val body = who.json()
         return request("POST", "/caregiver/lookup", body, auth = false).getJSONArray("children").mapObjects(::parseChild)
     }
 
@@ -327,6 +471,8 @@ class Api(
             givenLast30Days = j.optInt("givenLast30Days"),
             smsLast7Days = j.optInt("smsLast7Days"),
             smsMode = j.optString("smsMode", "test"),
+            pendingVerifications = j.optInt("pendingVerifications", 0),
+            autoReminders = j.optBoolean("autoReminders", true),
         )
     }
 
@@ -345,6 +491,7 @@ class Api(
         .put("language", language)
         .put("facility", facility)
         .put("consent", consent)
+        .put("nearestHospital", nearestHospital)
 
     suspend fun register(input: ChildInput): Child = parseChild(request("POST", "/children", input.toJson()))
 
@@ -394,13 +541,144 @@ class Api(
             )
         }
 
+    // An empty message sends the usual vaccine reminder.
+    suspend fun sendNotification(childId: Int, message: String): NotifyResult {
+        val res = request("POST", "/children/$childId/notify", JSONObject().put("message", message))
+        return NotifyResult(parseAppNotification(res.getJSONObject("notification")), res.stringOrNull("appSeenAt"))
+    }
+
+    suspend fun caregiverNotifications(who: SavedLookup, after: Long): List<IncomingNotification> {
+        val body = who.json().put("after", after)
+        return request("POST", "/caregiver/notifications", body, auth = false).optJSONArray("notifications").mapObjects { n ->
+            IncomingNotification(n.getLong("id"), n.optInt("childId"), n.optString("childName"), n.getString("message"), n.stringOrNull("from"))
+        }
+    }
+
     suspend fun remind(id: Int): ReminderResult {
-        val res = request("POST", "/children/$id/remind")
+        // The server waits a few seconds for the SMS phone to confirm it sent the message.
+        val res = request("POST", "/children/$id/remind", readTimeoutMs = 60000)
         return ReminderResult(res.getString("kind"), res.getString("smsStatus"))
     }
 
     suspend fun runReminders(): RunResult {
-        val res = request("POST", "/reminders/run")
-        return RunResult(res.getJSONArray("sent").length(), res.optString("smsMode", "test"))
+        val res = request("POST", "/reminders/run", readTimeoutMs = 180000)
+        val all = res.getJSONArray("sent")
+        fun count(status: String) = (0 until all.length()).count { all.getJSONObject(it).optString("status") == status }
+        return RunResult(all.length(), count("sent"), res.optString("smsMode", "test"), count("queued"), count("failed"))
     }
+
+    // ----- Vaccination verification -----
+
+    private fun parseVerification(j: JSONObject): Verification = Verification(
+        id = j.getInt("id"),
+        childId = j.getInt("childId"),
+        childName = j.optString("childName"),
+        doseCode = j.getString("doseCode"),
+        doseName = j.optString("doseName"),
+        vaccinationDate = j.optString("vaccinationDate"),
+        hospital = j.optString("hospital"),
+        doctorName = j.optString("doctorName"),
+        status = j.getString("status"),
+        submittedAt = j.optString("submittedAt"),
+        submissionCount = j.optInt("submissionCount", 1),
+        reviewedAt = j.stringOrNull("reviewedAt"),
+        rejectionReason = j.stringOrNull("rejectionReason"),
+        hasCard = j.optBoolean("hasCard"),
+        hasNote = j.optBoolean("hasNote"),
+        milestone = j.optString("milestone"),
+        reviewedBy = j.stringOrNull("reviewedBy"),
+        documentCount = j.optInt("documentCount"),
+        child = j.optJSONObject("child")?.let { c ->
+            VerificationChild(
+                c.getInt("id"), c.optString("childName"), c.optString("dob"), c.optString("caregiverName"),
+                c.optString("phone"), c.optString("facility"),
+            )
+        },
+        dose = j.optJSONObject("dose")?.let { d -> DoseState(d.optString("dueDate"), d.stringOrNull("givenDate"), d.optString("status")) },
+        documents = j.optJSONArray("documents").mapObjects { d ->
+            EvidenceDocument(d.getInt("id"), d.getString("kind"), d.optString("mimeType"), d.optInt("size"))
+        },
+        history = j.optJSONArray("history").mapObjects { e ->
+            VerificationEvent(e.getString("action"), e.optString("at"), e.stringOrNull("by"), e.stringOrNull("detail"))
+        },
+        warnings = j.optJSONArray("warnings").mapObjects { w -> VerificationWarning(w.optString("code"), w.optString("text")) },
+    )
+
+    // Sends one picture as raw JPEG bytes, reporting progress from 0 to 1 as it goes. Returns the ref
+    // to send with the request.
+    suspend fun uploadEvidence(who: SavedLookup, childId: Int, kind: String, bytes: ByteArray, onProgress: (Float) -> Unit): String =
+        onIo(auth = false) {
+            exchange("/caregiver/verification-documents?childId=$childId&kind=$kind", baseUrl(), configure = { conn ->
+                conn.requestMethod = "POST"
+                conn.readTimeout = 60000
+                conn.doOutput = true
+                conn.setFixedLengthStreamingMode(bytes.size)
+                conn.setRequestProperty("Accept", "application/json")
+                conn.setRequestProperty("Content-Type", "image/jpeg")
+                conn.setRequestProperty("X-Caregiver-Phone", who.phone)
+                conn.setRequestProperty("X-Child-Dob", who.dob)
+                // Header values must be plain ASCII, so the name is URL-encoded.
+                conn.setRequestProperty("X-Child-Name", android.net.Uri.encode(who.childName))
+                conn.outputStream.use { out ->
+                    var sent = 0
+                    while (sent < bytes.size) {
+                        val n = minOf(16 * 1024, bytes.size - sent)
+                        out.write(bytes, sent, n)
+                        sent += n
+                        onProgress(sent.toFloat() / bytes.size)
+                    }
+                }
+            }) { conn -> readJson(conn).getJSONObject("document").getString("ref") }
+        }
+
+    private fun EvidenceInput.toJson(who: SavedLookup) = who.json()
+        .put("childId", childId)
+        .put("doseCode", doseCode)
+        .put("vaccinationDate", vaccinationDate)
+        .put("hospital", hospital)
+        .put("doctorName", doctorName)
+        .put("cardDocument", cardDocument ?: JSONObject.NULL)
+        .put("noteDocument", noteDocument ?: JSONObject.NULL)
+
+    suspend fun submitEvidence(who: SavedLookup, input: EvidenceInput): Verification =
+        parseVerification(request("POST", "/caregiver/verifications", input.toJson(who), auth = false).getJSONObject("verification"))
+
+    suspend fun resubmitEvidence(id: Int, who: SavedLookup, input: EvidenceInput): Verification =
+        parseVerification(
+            request("POST", "/caregiver/verifications/$id/resubmit", input.toJson(who), auth = false).getJSONObject("verification"),
+        )
+
+    suspend fun caregiverEvidence(who: SavedLookup): CaregiverEvidence {
+        val body = who.json()
+        val j = request("POST", "/caregiver/verifications/status", body, auth = false)
+        return CaregiverEvidence(j.optJSONArray("children").mapObjects(::parseChild), j.optJSONArray("verifications").mapObjects(::parseVerification))
+    }
+
+    // status is "pending" or "reviewed".
+    suspend fun verifications(status: String): VerificationList {
+        val j = request("GET", "/verifications?status=$status")
+        val counts = j.optJSONObject("counts")
+        return VerificationList(
+            j.optJSONArray("verifications").mapObjects(::parseVerification),
+            counts?.optInt("pending") ?: 0,
+            counts?.optInt("reviewed") ?: 0,
+        )
+    }
+
+    suspend fun verification(id: Int): Verification = parseVerification(request("GET", "/verifications/$id").getJSONObject("verification"))
+
+    // The picture itself. Only a signed-in health worker can fetch it.
+    suspend fun evidenceDocument(verificationId: Int, documentId: Int): ByteArray = onIo(auth = true) {
+        exchange("/verifications/$verificationId/documents/$documentId", baseUrl(), configure = { conn ->
+            conn.requestMethod = "GET"
+            conn.readTimeout = 60000
+            token()?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
+        }) { conn -> conn.inputStream.use { it.readBytes() } }
+    }
+
+    suspend fun approveVerification(id: Int): Verification =
+        parseVerification(request("POST", "/verifications/$id/approve", JSONObject()).getJSONObject("verification"))
+
+    suspend fun rejectVerification(id: Int, reason: String): Verification =
+        parseVerification(request("POST", "/verifications/$id/reject", JSONObject().put("reason", reason)).getJSONObject("verification"))
 }

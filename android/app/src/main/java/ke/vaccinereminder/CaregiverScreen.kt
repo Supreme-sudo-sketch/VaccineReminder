@@ -29,6 +29,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChildCare
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -38,6 +40,7 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -83,6 +86,7 @@ fun CaregiverScreen(
     s: Strings,
     lookupsState: MutableState<List<SavedLookup>>,
     onNearby: () -> Unit,
+    onVerify: (childId: Int, doseCode: String) -> Unit,
     onBack: () -> Unit,
 ) {
     // `persisted` is what the caregiver asked us to remember; `lookups` also holds this visit's searches.
@@ -90,6 +94,7 @@ fun CaregiverScreen(
     var lookups by lookupsState
     val context = LocalContext.current
     val notify = LocalNotify.current
+    val repo = LocalChildren.current
     var canNotify by remember { mutableStateOf(VaccineAlerts.canNotify(context)) }
     var askedNotifications by rememberSaveable { mutableStateOf(false) }
     val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -120,11 +125,15 @@ fun CaregiverScreen(
     var loading by remember { mutableStateOf(lookups.isNotEmpty()) }
     var refreshing by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<ApiException?>(null) }
+    // When the children shown came from the copy saved on this phone.
+    var savedAt by remember { mutableStateOf<Long?>(null) }
     var showForm by rememberSaveable { mutableStateOf(persisted.isEmpty()) }
     var reload by remember { mutableIntStateOf(0) }
 
     var phone by rememberSaveable { mutableStateOf("") }
     var dob by rememberSaveable { mutableStateOf("") }
+    var childNameInput by rememberSaveable { mutableStateOf("") }
+    var nameError by remember { mutableStateOf<String?>(null) }
     var rememberLookup by rememberSaveable { mutableStateOf(true) }
     var phoneError by remember { mutableStateOf<String?>(null) }
     var dobError by remember { mutableStateOf<String?>(null) }
@@ -136,9 +145,13 @@ fun CaregiverScreen(
         val results = mutableListOf<Pair<SavedLookup, Child>>()
         val keep = mutableListOf<SavedLookup>()
         var failure: ApiException? = null
+        var oldestCopy: Long? = null
         for (l in lookups) {
             try {
-                api.lookup(l.phone, l.dob).forEach { results += l to it }
+                // Only sign-ins the caregiver chose to remember are saved on the phone.
+                val loaded = repo.lookup(l, save = l in persisted)
+                loaded.data.forEach { results += l to it }
+                loaded.savedAt?.let { t -> oldestCopy = minOf(oldestCopy ?: t, t) }
                 keep += l
             } catch (e: ApiException) {
                 // A 404 means the clinic removed or corrected the record, so stop looking it up.
@@ -155,6 +168,8 @@ fun CaregiverScreen(
         }
         found = results.distinctBy { it.second.id }
         loadError = failure
+        savedAt = oldestCopy
+        repo.keepCaregivers(persisted)
         loading = false
         refreshing = false
         if (lookups.isEmpty()) showForm = true
@@ -164,13 +179,14 @@ fun CaregiverScreen(
         val normalized = Phone.normalize(phone)
         phoneError = if (normalized == null) s.errPhone else null
         dobError = if (dob.isBlank()) s.errDob else null
-        if (normalized == null || dob.isBlank() || busy) return
+        nameError = if (childNameInput.isBlank()) s.errName else null
+        if (normalized == null || dob.isBlank() || childNameInput.isBlank() || busy) return
         scope.launch {
             busy = true
             formError = null
             try {
-                val lookup = SavedLookup(normalized, dob)
-                val children = api.lookup(normalized, dob)
+                val lookup = SavedLookup(normalized, dob, childNameInput.trim())
+                val children = repo.lookup(lookup, save = rememberLookup).data
                 lookups = (lookups + lookup).distinct()
                 if (rememberLookup) {
                     persisted = (persisted + lookup).distinct()
@@ -182,6 +198,7 @@ fun CaregiverScreen(
                 showForm = false
                 phone = ""
                 dob = ""
+                childNameInput = ""
             } catch (e: ApiException) {
                 formError = if (e.status == 404) s.lookupNotFound else s.error(e)
             } finally {
@@ -194,6 +211,7 @@ fun CaregiverScreen(
         lookups = lookups - lookup
         persisted = persisted - lookup
         secure.saveLookups(persisted)
+        repo.keepCaregivers(persisted)
         VaccineAlerts.sync(context, persisted.isNotEmpty())
         found = found.filter { it.first != lookup }
         if (found.isEmpty()) showForm = true
@@ -224,6 +242,14 @@ fun CaregiverScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (loading) item { LoadingBlock() }
+                savedAt?.let { t ->
+                    item {
+                        OfflineBanner(t, s) {
+                            loading = true
+                            reload++
+                        }
+                    }
+                }
                 loadError?.let { e ->
                     item {
                         MessageBanner(s.error(e), action = s.retry, onAction = {
@@ -233,7 +259,13 @@ fun CaregiverScreen(
                     }
                 }
                 items(found, key = { it.second.id }) { (lookup, child) ->
-                    CaregiverChildCard(child, s, onNearby = onNearby, onForget = if (lookup in persisted) ({ forget(lookup) }) else null)
+                    CaregiverChildCard(
+                        child,
+                        s,
+                        onNearby = onNearby,
+                        onVerify = { code -> onVerify(child.id, code) },
+                        onForget = if (lookup in persisted) ({ forget(lookup) }) else null,
+                    )
                 }
                 if (persisted.isNotEmpty() && !loading) {
                     item {
@@ -253,6 +285,12 @@ fun CaregiverScreen(
                                 phoneError = null
                             },
                             phoneError = phoneError,
+                            childName = childNameInput,
+                            onChildName = {
+                                childNameInput = it
+                                nameError = null
+                            },
+                            nameError = nameError,
                             dob = dob,
                             onDob = {
                                 dob = it
@@ -264,9 +302,17 @@ fun CaregiverScreen(
                             error = formError,
                             busy = busy,
                             onFind = ::find,
+                            hint = if (found.isNotEmpty()) s.addAnotherHint else null,
                         )
                     } else if (!loading) {
-                        OutlinedButton(onClick = { showForm = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                showForm = true
+                                // A brother or sister is usually on the same phone: only the date of birth is new.
+                                if (phone.isBlank()) phone = lookups.lastOrNull()?.let { Phone.display(it.phone) } ?: ""
+                            },
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                        ) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(s.addAnother)
@@ -284,6 +330,9 @@ private fun LookupForm(
     phone: String,
     onPhone: (String) -> Unit,
     phoneError: String?,
+    childName: String,
+    onChildName: (String) -> Unit,
+    nameError: String?,
     dob: String,
     onDob: (String) -> Unit,
     dobError: String?,
@@ -292,11 +341,13 @@ private fun LookupForm(
     error: String?,
     busy: Boolean,
     onFind: () -> Unit,
+    hint: String? = null,
 ) {
     val today = todayNairobi()
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(s.lookupIntro, style = MaterialTheme.typography.bodyMedium)
+            hint?.let { MessageBanner(it, kind = BannerKind.INFO) }
             FormField(
                 value = phone,
                 onValueChange = onPhone,
@@ -305,6 +356,16 @@ private fun LookupForm(
                 error = phoneError,
                 placeholder = s.phoneHint,
                 keyboardType = KeyboardType.Phone,
+                imeAction = ImeAction.Next,
+            )
+            FormField(
+                value = childName,
+                onValueChange = onChildName,
+                label = s.childName,
+                icon = Icons.Filled.ChildCare,
+                error = nameError,
+                supporting = s.childNameSignInHint,
+                capitalization = KeyboardCapitalization.Words,
                 imeAction = ImeAction.Done,
             )
             DateField(dob, s.childDob, s, onDob, error = dobError, min = today.minusYears(6), max = today)
@@ -345,7 +406,7 @@ private fun AlertsCard(s: Strings, canNotify: Boolean, onAllow: () -> Unit, onCh
 }
 
 @Composable
-private fun CaregiverChildCard(child: Child, s: Strings, onNearby: () -> Unit, onForget: (() -> Unit)?) {
+private fun CaregiverChildCard(child: Child, s: Strings, onNearby: () -> Unit, onVerify: (doseCode: String) -> Unit, onForget: (() -> Unit)?) {
     var expanded by rememberSaveable(child.id) { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
@@ -405,13 +466,34 @@ private fun CaregiverChildCard(child: Child, s: Strings, onNearby: () -> Unit, o
                 Spacer(Modifier.width(8.dp))
                 Text(s.clinicsNearMe)
             }
+            // Evidence of vaccines given at another facility, checked by a health worker.
+            OutlinedButton(onClick = { onVerify("") }, modifier = Modifier.padding(top = 8.dp)) {
+                Icon(Icons.Filled.Verified, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(s.verificationTitle)
+            }
+            val rejected = child.doses.count { it.verification?.status == "rejected" }
+            val waiting = child.doses.count { it.verification?.status == "pending" }
+            if (rejected > 0) {
+                Text(
+                    s.notAcceptedCount(rejected),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            } else if (waiting > 0) {
+                VerificationPill("pending", s, Modifier.padding(top = 6.dp))
+            }
             TextButton(onClick = { expanded = !expanded }, modifier = Modifier.padding(top = 4.dp)) {
                 Text(if (expanded) s.hideSchedule else s.fullSchedule)
                 Spacer(Modifier.width(4.dp))
                 Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
             }
             AnimatedVisibility(expanded) {
-                DoseTimeline(child.doses, s, Modifier.padding(top = 4.dp))
+                // Under each vaccine: the proof sent for it, or a button to send it.
+                DoseTimeline(child.doses, s, Modifier.padding(top = 4.dp), below = { dose ->
+                    DoseEvidence(dose, s, onSend = { onVerify(dose.code) })
+                })
             }
         }
     }

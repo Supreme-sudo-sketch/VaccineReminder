@@ -129,7 +129,7 @@ fun WelcomeScreen(
                 Spacer(Modifier.width(12.dp))
                 Text(s.welcomeNote, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
             }
-            Text(s.language, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+            Text(s.language, style = MaterialTheme.typography.labelLarge, color = scheme.onBackground, modifier = Modifier.padding(top = 4.dp))
             LanguageChoice(lang, s, onLang)
             Spacer(Modifier.height(8.dp))
         }

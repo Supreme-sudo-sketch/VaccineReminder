@@ -93,19 +93,20 @@ class Strings(val lang: Lang) {
     // Caregiver
     val myChildTitle = p("My child's vaccines", "Chanjo za mtoto wangu")
     val lookupIntro = p(
-        "Enter the phone number you gave at the clinic and your child's date of birth.",
-        "Weka namba ya simu uliyotoa kliniki na tarehe ya kuzaliwa ya mtoto wako.",
+        "Your child is registered by the clinic. Enter the phone number you gave there, your child's name and date of birth.",
+        "Mtoto wako husajiliwa na kliniki. Weka namba ya simu uliyotoa huko, jina la mtoto wako na tarehe ya kuzaliwa.",
     )
     val phone = p("Phone number", "Namba ya simu")
     val phoneHint = "0712 345 678"
     val childDob = p("Child's date of birth", "Tarehe ya kuzaliwa ya mtoto")
     val rememberMe = p("Remember on this phone", "Kumbuka kwenye simu hii")
     val find = p("Find my child", "Tafuta mtoto wangu")
-    val addAnother = p("Add another child", "Ongeza mtoto mwingine")
+    val addAnother = p("Find another of my children", "Tafuta mtoto wangu mwingine")
+    val childNameSignInHint = p("As registered at the clinic, e.g. Amani", "Kama lilivyosajiliwa kliniki, mfano Amani")
     val forgetChild = p("Remove from this phone", "Ondoa kwenye simu hii")
     val lookupNotFound = p(
-        "No child found with that phone number and date of birth. Check both and try again.",
-        "Hakuna mtoto aliyepatikana kwa namba hiyo ya simu na tarehe ya kuzaliwa. Angalia zote mbili ujaribu tena.",
+        "No child found with that phone number, name and date of birth. Check them, or ask the clinic to register your child.",
+        "Hakuna mtoto aliyepatikana kwa namba hiyo ya simu, jina na tarehe ya kuzaliwa. Viangalie, au uombe kliniki imsajili mtoto wako.",
     )
     val nextVisit = p("Next visit", "Ziara inayofuata")
     val visitToday = p("Visit the clinic today", "Tembelea kliniki leo")
@@ -173,6 +174,23 @@ class Strings(val lang: Lang) {
         "health_centre" -> p("Health centre", "Kituo cha afya")
         else -> p("Clinic", "Kliniki")
     }
+    // Choosing a facility from the list
+    val chooseFacility = p("Choose health facility", "Chagua kituo cha afya")
+    val chooseFromList = p("Tap to choose from the list", "Gusa ili kuchagua kutoka kwenye orodha")
+    val searchFacility = p("Search by name or county", "Tafuta kwa jina au kaunti")
+    val facilitySearchHint = p(
+        "Type at least 2 letters of the facility's name or county, e.g. \"Kenyatta\" or \"Riruta Nairobi\".",
+        "Andika angalau herufi 2 za jina la kituo au kaunti, mfano \"Kenyatta\" au \"Riruta Nairobi\".",
+    )
+    val noFacilityFound = p("No facility found with that name.", "Hakuna kituo kilichopatikana kwa jina hilo.")
+    val keepTyping = p("More facilities match. Keep typing to narrow the list.", "Vituo zaidi vinalingana. Endelea kuandika ili kupunguza orodha.")
+    fun useTypedFacility(name: String) = p("Not in the list? Use \"$name\"", "Hakipo kwenye orodha? Tumia \"$name\"")
+    val facilityInUse = p("Already used in this system", "Tayari kinatumika kwenye mfumo huu")
+    fun county(name: String) = p("$name County", "Kaunti ya $name")
+    val facilityListCredit = p(
+        "Facility list from OpenStreetMap (© OpenStreetMap contributors). Some facilities may be missing.",
+        "Orodha ya vituo kutoka OpenStreetMap (© wachangiaji wa OpenStreetMap). Baadhi ya vituo huenda havipo.",
+    )
     val noPhoneOnMap = p("No phone number on OpenStreetMap", "Hakuna namba ya simu kwenye OpenStreetMap")
     fun openingHours(hours: String) = p("Hours: $hours", "Saa: $hours")
     val directions = p("Directions", "Maelekezo")
@@ -195,9 +213,12 @@ class Strings(val lang: Lang) {
     fun areaOnCard(label: String) = p("SMS lists clinics near $label", "SMS inaorodhesha kliniki karibu na $label")
     val alertsTitle = p("Vaccine alerts on this phone", "Arifa za chanjo kwenye simu hii")
     val alertsBody = p(
-        "About every 12 hours the app checks for vaccines due within 3 days or missed, and shows a notification.",
-        "Takriban kila saa 12 programu huangalia chanjo zinazotarajiwa ndani ya siku 3 au zilizokosekana, na kuonyesha arifa.",
+        "You get a notification when a vaccine is due within 3 days or missed (checked about every 12 hours), and when the clinic sends you a message (checked every 15 minutes and when you open the app).",
+        "Utapata arifa chanjo inapotarajiwa ndani ya siku 3 au imekosekana (huangaliwa takriban kila saa 12), na kliniki inapokutumia ujumbe (huangaliwa kila dakika 15 na unapofungua programu).",
     )
+    val messagesChannel = p("Messages from the clinic", "Ujumbe kutoka kliniki")
+    fun messageFrom(clinic: String) = p("Message from $clinic", "Ujumbe kutoka $clinic")
+    val messageFromClinic = p("Message from the clinic", "Ujumbe kutoka kliniki")
     val alertsNeedPermission = p("Allow notifications to get these alerts.", "Ruhusu arifa ili upate arifa hizi.")
     val allowNotifications = p("Allow notifications", "Ruhusu arifa")
     val checkNow = p("Check now", "Angalia sasa")
@@ -223,6 +244,20 @@ class Strings(val lang: Lang) {
     val statDueWeek = p("Due in 7 days", "Wanatarajiwa siku 7")
     val statSms = p("SMS sent, 7 days", "SMS zilizotumwa, siku 7")
     val remindersTitle = p("SMS reminders", "Vikumbusho vya SMS")
+    val remindersManual = p(
+        "Automatic SMS are off: a reminder goes out only when you send it, here for every child due or late, or from a child's record.",
+        "SMS za moja kwa moja zimezimwa: kumbusho linatumwa tu unapolituma, hapa kwa kila mtoto anayehitaji au aliyechelewa, au kutoka kwenye rekodi ya mtoto.",
+    )
+    val confirmSmsTitle = p("Send SMS reminder?", "Tuma kumbusho la SMS?")
+    fun confirmSmsBody(parent: String, phone: String) = p(
+        "An SMS about the next vaccines will go to $parent ($phone). It is paid from the clinic's SMS phone.",
+        "SMS kuhusu chanjo zinazofuata itatumwa kwa $parent ($phone). Inalipiwa kutoka kwa simu ya SMS ya kliniki.",
+    )
+    val confirmRunTitle = p("Send today's SMS reminders?", "Tuma vikumbusho vya SMS vya leo?")
+    val confirmRunBody = p(
+        "Every child with a vaccine due in the next 3 days, due today or missed gets one SMS, unless they already got it. Demo children are skipped. Each SMS is paid from the clinic's SMS phone.",
+        "Kila mtoto mwenye chanjo inayohitajika ndani ya siku 3, leo au iliyokosekana atapata SMS moja, isipokuwa kama tayari ameipata. Watoto wa mfano wanarukwa. Kila SMS inalipiwa kutoka kwa simu ya SMS ya kliniki.",
+    )
     val remindersAuto = p(
         "Reminders go out automatically every morning after 8:00.",
         "Vikumbusho hutumwa kila asubuhi baada ya saa 2:00.",
@@ -230,10 +265,17 @@ class Strings(val lang: Lang) {
     val smsModeTest = p("Test mode: messages are logged, not sent.", "Hali ya majaribio: ujumbe unahifadhiwa, hautumwi.")
     val smsModeLive = p("Live: messages are sent by SMS.", "Moja kwa moja: ujumbe unatumwa kwa SMS.")
     val runReminders = p("Send today's reminders now", "Tuma vikumbusho vya leo sasa")
-    fun remindersProcessed(n: Int) = if (n == 0) {
-        p("No reminders were due today", "Hakuna vikumbusho vilivyohitajika leo")
-    } else {
-        p("Reminders sent: $n", "Vikumbusho vilivyotumwa: $n")
+    fun remindersProcessed(n: Int, sent: Int, waiting: Int = 0, failed: Int = 0): String {
+        if (n == 0) return p("No reminders were due today", "Hakuna vikumbusho vilivyohitajika leo")
+        if (sent == n) return p("SMS reminders sent: $n", "Vikumbusho vya SMS vilivyotumwa: $n")
+        val recorded = n - sent - waiting - failed
+        val parts = listOfNotNull(
+            p("$sent sent by SMS", "$sent vimetumwa kwa SMS"),
+            if (waiting > 0) p("$waiting waiting for the SMS phone", "$waiting vinasubiri simu ya SMS") else null,
+            if (failed > 0) p("$failed failed", "$failed vimeshindwa") else null,
+            if (recorded > 0) p("$recorded only recorded (demo or test numbers)", "$recorded vimehifadhiwa tu (namba za majaribio)") else null,
+        )
+        return p("$n reminders: ", "Vikumbusho $n: ") + parts.joinToString(", ")
     }
     val dueThisWeek = p("Due in the next 7 days", "Wanatarajiwa ndani ya siku 7")
     val noneDueThisWeek = p("No visits due this week", "Hakuna ziara wiki hii")
@@ -292,7 +334,26 @@ class Strings(val lang: Lang) {
     fun bornOn(date: String) = p("Born $date", "Alizaliwa $date")
     val sendReminder = p("Send SMS reminder", "Tuma kumbusho la SMS")
     val reminderSent = p("Reminder sent", "Kumbusho limetumwa")
+    val offlineTitle = p("Offline: saved copy", "Nje ya mtandao: nakala iliyohifadhiwa")
+    fun offlineCopy(time: String) = p(
+        "The server cannot be reached, so this is the copy saved on this phone ($time). Changes, SMS and proof need the server.",
+        "Seva haipatikani, kwa hiyo hii ni nakala iliyohifadhiwa kwenye simu hii ($time). Mabadiliko, SMS na ushahidi vinahitaji seva.",
+    )
     val reminderTest = p("Reminder logged (test mode, no SMS sent)", "Kumbusho limehifadhiwa (majaribio, SMS haikutumwa)")
+    val reminderDemo = p(
+        "Demo child: the reminder was recorded but no SMS was sent (made-up number)",
+        "Mtoto wa mfano: kumbusho limehifadhiwa lakini SMS haikutumwa (namba ya kubuni)",
+    )
+    val reminderQueued = p(
+        "The SMS phone has the reminder but has not sent it yet. It goes out as soon as that phone is on with TextBee open, so do not send it again.",
+        "Simu ya SMS imepokea kumbusho lakini bado haijalituma. Litatumwa mara simu hiyo ikiwashwa na TextBee ikiwa wazi, kwa hiyo usilitume tena.",
+    )
+    fun reminderOutcome(status: String) = when (status) {
+        "sent" -> reminderSent
+        "queued" -> reminderQueued
+        "demo" -> reminderDemo
+        else -> reminderTest
+    }
     val schedule = p("Vaccination schedule", "Ratiba ya chanjo")
     val record = p("Record", "Rekodi")
     val undo = p("Undo", "Tengua")
@@ -314,6 +375,30 @@ class Strings(val lang: Lang) {
     val onDueDates = p("On their due dates", "Kwenye tarehe zake")
     val onOneDate = p("On one date", "Kwenye tarehe moja")
     val smsHistory = p("SMS history", "Historia ya SMS")
+
+    // Notifications a health worker sends to the caregiver's app
+    val sendNotification = p("Send notification", "Tuma arifa")
+    fun notifyTitle(child: String) = p("Notify ${child}'s caregiver", "Mjulishe mlezi wa $child")
+    val notifyBody = p(
+        "It shows on the caregiver's phone if they found this child in the app and ticked \"Remember on this phone\". It arrives within about 15 minutes, sooner if they open the app.",
+        "Itaonekana kwenye simu ya mlezi kama alimtafuta mtoto huyu kwenye programu na kuchagua \"Kumbuka kwenye simu hii\". Inafika ndani ya takriban dakika 15, mapema zaidi akifungua programu.",
+    )
+    fun appLastSeen(time: String) = p("Their app last checked in $time.", "Programu yao iliangalia mara ya mwisho $time.")
+    val appNeverSeen = p(
+        "No caregiver's app has checked in for this child yet, so it may not arrive. An SMS reaches any phone.",
+        "Bado hakuna programu ya mlezi iliyoangalia kwa ajili ya mtoto huyu, kwa hiyo huenda isifike. SMS hufika kwenye simu yoyote.",
+    )
+    val notificationMessage = p("Message (optional)", "Ujumbe (si lazima)")
+    val notificationMessageHint = p("Leave empty to send the usual vaccine reminder", "Acha tupu ili kutuma kumbusho la kawaida la chanjo")
+    val send = p("Send", "Tuma")
+    val notificationSent = p(
+        "Notification sent. It shows on the caregiver's phone within about 15 minutes.",
+        "Arifa imetumwa. Itaonekana kwenye simu ya mlezi ndani ya takriban dakika 15.",
+    )
+    val appNotifications = p("App notifications", "Arifa za programu")
+    val delivered = p("Delivered", "Imefika")
+    val waiting = p("Waiting", "Inasubiri")
+    fun deliveredAt(time: String) = p("Reached the phone $time", "Ilifika kwenye simu $time")
     val deleteRecord = p("Delete record", "Futa rekodi")
     val deleteTitle = p("Delete this record?", "Futa rekodi hii?")
     fun deleteBody(name: String) = p(
@@ -336,7 +421,9 @@ class Strings(val lang: Lang) {
 
     fun smsStatus(status: String) = when (status) {
         "sent" -> p("Sent", "Imetumwa")
-        "dry-run" -> p("Test mode", "Majaribio")
+        "queued" -> p("Waiting for SMS phone", "Inasubiri simu ya SMS")
+        "dry-run" -> p("Not sent (test mode)", "Haikutumwa (majaribio)")
+        "demo" -> p("Not sent (demo child)", "Haikutumwa (mtoto wa mfano)")
         else -> p("Failed", "Imeshindwa")
     }
 
@@ -351,6 +438,10 @@ class Strings(val lang: Lang) {
     fun connected(date: String, mode: String) =
         p("Connected. Server date $date. SMS: ${smsModeName(mode)}.", "Imeunganishwa. Tarehe ya seva $date. SMS: ${smsModeName(mode)}.")
     fun smsModeName(mode: String) = if (mode == "live") p("live", "moja kwa moja") else p("test mode", "majaribio")
+    val appearance = p("Appearance", "Mwonekano")
+    val themeSystem = p("Phone setting", "Kama simu")
+    val themeLight = p("Light", "Mwanga")
+    val themeDark = p("Dark", "Giza")
     val account = p("Account", "Akaunti")
     val changePassword = p("Change password", "Badilisha nenosiri")
     val currentPassword = p("Current password", "Nenosiri la sasa")
@@ -398,6 +489,217 @@ class Strings(val lang: Lang) {
         return years + p(if (m == 1) ", 1 month" else ", $m months", if (m == 1) " na mwezi 1" else " na miezi $m")
     }
 
+    // Vaccination verification
+    val verificationTitle = p("Vaccination verification", "Uthibitisho wa chanjo")
+    val verificationRequests = p("Vaccination verification requests", "Maombi ya uthibitisho wa chanjo")
+    val verificationRequestsShort = p("Verification requests", "Maombi ya uthibitisho")
+    fun verificationStatus(status: String) = when (status) {
+        "pending" -> p("Pending verification", "Inasubiri uthibitisho")
+        "verified" -> p("Verified", "Imethibitishwa")
+        "rejected" -> p("Rejected", "Imekataliwa")
+        else -> p("Not submitted", "Haijatumwa")
+    }
+    val verificationIntro = p(
+        "Was your child vaccinated at another hospital or clinic? Send a photo of the vaccination card or a signed doctor's note. A health worker checks it before the vaccine is added to your child's record.",
+        "Je, mtoto wako alichanjwa katika hospitali au kliniki nyingine? Tuma picha ya kadi ya chanjo au barua ya daktari iliyotiwa sahihi. Mhudumu wa afya ataikagua kabla chanjo haijaongezwa kwenye rekodi ya mtoto wako.",
+    )
+    val newEvidence = p("Send new evidence", "Tuma ushahidi mpya")
+    val myRequests = p("My requests", "Maombi yangu")
+    val noRequestsTitle = p("No requests yet", "Bado hakuna maombi")
+    val noRequestsBody = p("Evidence you send appears here with its status.", "Ushahidi unaotuma utaonekana hapa pamoja na hali yake.")
+    val findChildFirst = p("Find your child first", "Tafuta mtoto wako kwanza")
+    val findChildFirstBody = p(
+        "Go back and enter your phone number and your child's date of birth.",
+        "Rudi na uweke namba yako ya simu na tarehe ya kuzaliwa ya mtoto wako.",
+    )
+    fun givenAt(date: String, hospital: String) = p("Given $date at $hospital", "Ilitolewa $date katika $hospital")
+    fun byDoctor(name: String) = p("By $name", "Na $name")
+    fun sentOn(time: String) = p("Sent $time", "Ilitumwa $time")
+    val pendingNote = p(
+        "A health worker will check this. You will get a notification when it has been reviewed.",
+        "Mhudumu wa afya ataikagua. Utapata arifa ikishakaguliwa.",
+    )
+    val verifiedNote = p("Added to your child's vaccination record.", "Imeongezwa kwenye rekodi ya chanjo ya mtoto wako.")
+    val notAccepted = p("Not accepted", "Haikukubaliwa")
+    fun reasonLine(reason: String) = p("Reason: $reason", "Sababu: $reason")
+    val sendCorrected = p("Send corrected evidence", "Tuma ushahidi uliorekebishwa")
+    fun notAcceptedCount(n: Int) =
+        if (n == 1) p("1 request was not accepted", "Ombi 1 halikukubaliwa") else p("$n requests were not accepted", "Maombi $n hayakukubaliwa")
+    fun waitingReview(n: Int) = when (n) {
+        0 -> p("No requests waiting", "Hakuna maombi yanayosubiri")
+        else -> p("$n waiting for review", "$n yanasubiri ukaguzi")
+    }
+
+    val newEvidenceTitle = p("New evidence", "Ushahidi mpya")
+    val resubmitTitle = p("Correct and send again", "Rekebisha na utume tena")
+    val childLabel = p("Child", "Mtoto")
+    val vaccineDose = p("Vaccine and dose", "Chanjo na dozi")
+    val noDosesLeft = p(
+        "Every vaccine is already recorded or waiting for review.",
+        "Chanjo zote tayari zimerekodiwa au zinasubiri ukaguzi.",
+    )
+    val vaccinationDate = p("Date of vaccination", "Tarehe ya chanjo")
+    val hospitalLabel = p("Hospital or clinic", "Hospitali au kliniki")
+    val doctorLabel = p("Doctor's or health worker's name", "Jina la daktari au mhudumu wa afya")
+    val evidenceHeader = p("Supporting documents", "Nyaraka za ushahidi")
+    val evidenceHint = p(
+        "Add at least one. Make sure the child's name, the vaccine, the date and the stamp can be read.",
+        "Ongeza angalau moja. Hakikisha jina la mtoto, chanjo, tarehe na muhuri vinasomeka.",
+    )
+    val cardPhoto = p("Vaccination card", "Kadi ya chanjo")
+    val notePhoto = p("Signed doctor's note", "Barua ya daktari iliyotiwa sahihi")
+    val takePhoto = p("Take photo", "Piga picha")
+    val gallery = p("Gallery", "Picha zilizopo")
+    val replace = p("Replace", "Badilisha")
+    val remove = p("Remove", "Ondoa")
+    val preparingPhoto = p("Preparing photo", "Inaandaa picha")
+    fun uploading(percent: Int) = p("Uploading $percent%", "Inapakia $percent%")
+    val uploaded = p("Uploaded", "Imepakiwa")
+    val tapToEnlarge = p("Tap to enlarge", "Gusa kukuza")
+    val errDose = p("Choose the vaccine and dose", "Chagua chanjo na dozi")
+    val errVaccinationDate = p("Choose the date the vaccine was given", "Chagua tarehe chanjo ilipotolewa")
+    val errHospital = p("Enter the hospital or clinic", "Weka hospitali au kliniki")
+    val errDoctor = p("Enter the doctor's or health worker's name", "Weka jina la daktari au mhudumu wa afya")
+    val errNoDocument = p("Add a photo of the vaccination card or the doctor's note", "Ongeza picha ya kadi ya chanjo au barua ya daktari")
+    fun badImage(problem: EvidenceImages.Problem) = when (problem) {
+        EvidenceImages.Problem.NOT_A_PICTURE -> p("This file is not a picture that can be used. Choose a photo.", "Faili hii si picha inayoweza kutumika. Chagua picha.")
+        EvidenceImages.Problem.TOO_SMALL -> p("This photo is too small to read. Take it closer.", "Picha hii ni ndogo mno kusomeka. Ipige karibu zaidi.")
+        EvidenceImages.Problem.TOO_LARGE -> p("This photo is too large. Choose another one.", "Picha hii ni kubwa mno. Chagua nyingine.")
+    }
+    val noCameraApp = p("No camera app was found on this phone.", "Hakuna programu ya kamera kwenye simu hii.")
+    val submitEvidence = p("Send for verification", "Tuma kwa uthibitisho")
+    val confirmSendTitle = p("Send for verification?", "Tuma kwa uthibitisho?")
+    fun confirmSendBody(child: String, dose: String) = p(
+        "A health worker will check the evidence for $child's $dose. It is added to the record only after they approve it.",
+        "Mhudumu wa afya atakagua ushahidi wa chanjo ya $dose ya $child. Itaongezwa kwenye rekodi baada ya kuidhinishwa tu.",
+    )
+    val evidenceSent = p("Sent. A health worker will review it.", "Imetumwa. Mhudumu wa afya ataikagua.")
+    val uploadFailed = p("The evidence was not sent", "Ushahidi haukutumwa")
+
+    val pendingTab = p("Pending", "Zinazosubiri")
+    val reviewedTab = p("Reviewed", "Zilizokaguliwa")
+    val noPendingTitle = p("No requests waiting", "Hakuna maombi yanayosubiri")
+    val noPendingBody = p(
+        "When parents send evidence of vaccines given elsewhere, it appears here for review.",
+        "Wazazi wakituma ushahidi wa chanjo zilizotolewa kwingine, utaonekana hapa kwa ukaguzi.",
+    )
+    val noReviewedTitle = p("Nothing reviewed yet", "Bado hakuna kilichokaguliwa")
+    val noReviewedBody = p("Requests that have been approved or rejected are listed here.", "Maombi yaliyoidhinishwa au kukataliwa yataonekana hapa.")
+    fun reviewedBy(name: String, time: String) = p("Reviewed by $name · $time", "Imekaguliwa na $name · $time")
+    fun photoCount(n: Int) = if (n == 1) p("1 photo", "Picha 1") else p("$n photos", "Picha $n")
+    fun sentTimes(n: Int) = p("Sent $n times", "Imetumwa mara $n")
+    val sectionVaccination = p("Vaccination", "Chanjo")
+    val sectionEvidence = p("Evidence", "Ushahidi")
+    val sectionHistory = p("History", "Historia")
+    val dateGivenLabel = p("Date given", "Tarehe iliyotolewa")
+    val inRecordNow = p("In the record now", "Kwenye rekodi sasa")
+    fun recordGiven(date: String) = p("Given $date", "Imetolewa $date")
+    fun recordNotGiven(due: String) = p("Not given yet, due $due", "Bado haijatolewa, tarehe $due")
+    val openChildRecord = p("Open child's record", "Fungua rekodi ya mtoto")
+    val imageLoadFailed = p("Could not load the picture", "Imeshindwa kupakia picha")
+    val verifyAdvice = p(
+        "Check that the picture shows this child's name, the vaccine, the date and the facility stamp. If in doubt, call the facility to confirm before approving: a photo alone is not proof.",
+        "Hakikisha picha inaonyesha jina la mtoto huyu, chanjo, tarehe na muhuri wa kituo. Ukiwa na shaka, piga simu kituo kuthibitisha kabla ya kuidhinisha: picha pekee si uthibitisho.",
+    )
+    val approve = p("Approve", "Idhinisha")
+    val reject = p("Reject", "Kataa")
+    val approveTitle = p("Approve this evidence?", "Idhinisha ushahidi huu?")
+    fun approveBody(dose: String, date: String, child: String) = p(
+        "$dose will be recorded as given to $child on $date, and the next vaccine dates will be updated. The caregiver will be notified.",
+        "$dose itarekodiwa kuwa imetolewa kwa $child tarehe $date, na tarehe za chanjo zinazofuata zitasasishwa. Mzazi atajulishwa.",
+    )
+    val rejectTitle = p("Reject this evidence?", "Kataa ushahidi huu?")
+    val rejectBody = p(
+        "Tell the caregiver what is wrong so they can send corrected evidence. The vaccine record is not changed.",
+        "Mweleze mzazi kilichokosewa ili atume ushahidi uliorekebishwa. Rekodi ya chanjo haibadilishwi.",
+    )
+    val rejectReason = p("Reason", "Sababu")
+    val errReason = p("Write the reason (at least 5 characters)", "Andika sababu (angalau herufi 5)")
+    val reasonUnclear = p("The photo is not clear enough to read.", "Picha haiko wazi kiasi cha kusomeka.")
+    val reasonMismatch = p("The details do not match the card.", "Maelezo hayalingani na kadi.")
+    val reasonUnconfirmed = p("The facility could not confirm this vaccination.", "Kituo hakikuweza kuthibitisha chanjo hii.")
+    val approvedDone = p("Approved and added to the record", "Imeidhinishwa na kuongezwa kwenye rekodi")
+    val rejectedDone = p("Rejected. The caregiver has been notified.", "Imekataliwa. Mzazi amejulishwa.")
+    fun verifiedBy(name: String, time: String) = p(
+        "Verified by $name, $time. The vaccine is in the child's record.",
+        "Imethibitishwa na $name, $time. Chanjo imo kwenye rekodi ya mtoto.",
+    )
+    fun rejectedBy(name: String, time: String) = p("Rejected by $name, $time", "Imekataliwa na $name, $time")
+    fun eventLabel(action: String) = when (action) {
+        "submitted" -> p("Sent by the caregiver", "Imetumwa na mzazi")
+        "resubmitted" -> p("Sent again by the caregiver", "Imetumwa tena na mzazi")
+        "approved" -> p("Approved", "Imeidhinishwa")
+        "rejected" -> p("Rejected", "Imekataliwa")
+        else -> action
+    }
+    fun warning(w: VerificationWarning) = when (w.code) {
+        "own_child" -> p(
+            "This child is registered with your own phone number, so another health worker must review it.",
+            "Mtoto huyu amesajiliwa kwa namba yako ya simu, kwa hiyo mhudumu mwingine wa afya lazima akague.",
+        )
+        "already_given" -> p(w.text, "Chanjo hii tayari imerekodiwa kuwa imetolewa. Kataa ombi hili.")
+        "early" -> p("The date is before the recommended date for this dose.", "Tarehe ni kabla ya tarehe inayopendekezwa kwa dozi hii.")
+        "reused_document" -> p("The same picture was also sent for another child.", "Picha hiyo hiyo ilitumwa pia kwa mtoto mwingine.")
+        "date_conflict" -> p(w.text, "Tarehe hii haiendani na chanjo nyingine zilizorekodiwa: ${w.text}")
+        else -> w.text
+    }
+    fun evidenceWaiting(n: Int) = if (n == 1) {
+        p("1 vaccination proof waiting for review", "Uthibitisho 1 wa chanjo unasubiri ukaguzi")
+    } else {
+        p("$n vaccination proofs waiting for review", "Uthibitisho $n wa chanjo unasubiri ukaguzi")
+    }
+    val evidenceWaitingBody = p(
+        "The caregiver sent evidence of vaccines given elsewhere.",
+        "Mzazi ametuma ushahidi wa chanjo zilizotolewa kwingine.",
+    )
+    val review = p("Review", "Kagua")
+
+    // Child or parent, and families
+    fun parentLine(name: String, phone: String) = p("Parent: $name · $phone", "Mzazi: $name · $phone")
+    val nearestHospitalLabel = p("Nearest hospital to home", "Hospitali iliyo karibu na nyumbani")
+    val nearestHospitalHint = p(
+        "Ask the parent which hospital is closest to their home. The SMS names it next to the clinic above.",
+        "Muulize mzazi hospitali iliyo karibu zaidi na nyumbani kwake. SMS itaitaja pamoja na kliniki iliyo juu.",
+    )
+    val parentPhone = p("Parent's phone number", "Namba ya simu ya mzazi")
+    val parentPhoneHint = p("SMS reminders go to this number", "Vikumbusho vya SMS vinatumwa kwa namba hii")
+    val caregiverHint = p(
+        "The person who brings the child to the clinic and receives the reminders.",
+        "Mtu anayemleta mtoto kliniki na kupokea vikumbusho.",
+    )
+    fun familyTitle(parent: String) = p("$parent's children", "Watoto wa $parent")
+    val familyEmpty = p(
+        "Does this parent have another child? Add them with the parent's details already filled in.",
+        "Je, mzazi huyu ana mtoto mwingine? Mwongeze, maelezo ya mzazi yakiwa tayari yamejazwa.",
+    )
+    val twin = p("Twin", "Pacha")
+    val addChild = p("Add child", "Ongeza mtoto")
+    fun addingTwinTitle(name: String) = p("Registering a twin of $name", "Kusajili pacha wa $name")
+    fun addingSiblingTitle(parent: String) = p("Registering another child of $parent", "Kusajili mtoto mwingine wa $parent")
+    val twinPrefilledNote = p(
+        "The parent and the date of birth are filled in. Enter the twin's name and tick consent.",
+        "Mzazi na tarehe ya kuzaliwa vimejazwa. Weka jina la pacha na uweke alama ya idhini.",
+    )
+    val siblingPrefilledNote = p(
+        "The parent's details are filled in. Enter the child's name and date of birth, and tick consent.",
+        "Maelezo ya mzazi yamejazwa. Weka jina na tarehe ya kuzaliwa ya mtoto, na uweke alama ya idhini.",
+    )
+    val addAnotherHint = p(
+        "Another child? Enter that child's name and date of birth with the same phone number. The clinic registers children; here you only find them.",
+        "Mtoto mwingine? Weka jina na tarehe ya kuzaliwa ya mtoto huyo kwa namba ile ile ya simu. Kliniki ndiyo husajili watoto; hapa unawatafuta tu.",
+    )
+    val proofLabel = p("Proof", "Ushahidi")
+    val sendProof = p("Send proof", "Tuma ushahidi")
+    val sendAgain = p("Send again", "Tuma tena")
+    val viewProof = p("View proof", "Angalia ushahidi")
+    val cardShort = p("Card photo", "Picha ya kadi")
+    val noteShort = p("Doctor's note", "Barua ya daktari")
+    val noProofWorker = p(
+        "No proof from the caregiver yet. If you gave this vaccine, tap Record.",
+        "Mzazi bado hajatuma ushahidi. Kama ulitoa chanjo hii, gusa Rekodi.",
+    )
+    val noProofYet = p("No proof sent. Vaccinated elsewhere? Send a photo of the card.", "Hakuna ushahidi. Alichanjwa kwingine? Tuma picha ya kadi.")
+
     fun status(code: String) = when (code) {
         "given" -> p("Given", "Amepata")
         "due" -> p("Due today", "Leo")
@@ -438,10 +740,28 @@ class Strings(val lang: Lang) {
         "not_found" -> "Haikupatikana"
         "duplicate_child" -> "Mtoto huyu tayari amesajiliwa"
         "no_consent" -> consentOffNote
-        "all_given" -> "Chanjo zote tayari zimetolewa"
+        "all_given" -> if (e.field == "message") "Chanjo zote tayari zimetolewa. Andika ujumbe ili kutuma badala yake" else "Chanjo zote tayari zimetolewa"
+        "recently_notified" -> "Arifa hii imetumwa sasa hivi"
         "recently_reminded" -> "Kumbusho tayari limetumwa kwa mzazi huyu ndani ya saa 12 zilizopita"
-        "sms_failed" -> "SMS haikuweza kutumwa. Jaribu tena baadaye"
+        "sms_failed" -> "SMS haikuweza kutumwa. Hakikisha simu ya SMS imewashwa, ina mtandao na programu ya TextBee iko wazi, kisha ujaribu tena"
+        "no_document" -> errNoDocument
+        "bad_document" -> "Picha iliyopakiwa haikupatikana. Ipakie tena"
+        "already_pending" -> "Ushahidi wa chanjo hii tayari unasubiri ukaguzi"
+        "already_given" -> "Chanjo hii tayari imerekodiwa kuwa imetolewa"
+        "not_pending" -> "Ombi hili tayari limekaguliwa"
+        "not_rejected" -> "Ni ombi lililokataliwa pekee linaloweza kutumwa tena"
+        "bad_file" -> "Ni picha za JPEG au PNG zinazosomeka pekee zinazoweza kupakiwa"
+        "file_too_large" -> "Faili ni kubwa mno"
+        "too_many_uploads" -> "Picha nyingi mno zimepakiwa bila kutuma ombi. Jaribu tena kesho"
+        "own_child" -> "Mtoto huyu amesajiliwa kwa namba yako ya simu. Mhudumu mwingine wa afya lazima akague"
+        "reason_required" -> errReason
+        "document_unreadable" -> "Hati hii haiwezi kusomwa tena"
+        "no_storage" -> "Seva haijawekwa kuhifadhi nyaraka"
         "invalid" -> when (e.field) {
+            "vaccinationDate" -> errVaccinationDate
+            "hospital" -> errHospital
+            "doctorName" -> errDoctor
+            "doseCode" -> errDose
             "phone" -> errPhone
             "dob", "childDob" -> "Tarehe ya kuzaliwa si sahihi"
             "date" -> "Tarehe si sahihi"

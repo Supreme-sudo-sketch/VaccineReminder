@@ -1,7 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { BY_CODE, planDueDates } from './schedule.js';
 
-const SCHEMA_VERSION = 2;
+// 3 added the vaccination verification tables. They are created with IF NOT EXISTS, so upgrading an
+// older database only adds them and leaves every existing row as it was.
+const SCHEMA_VERSION = 3;
 
 export function openDb(path = 'vaccine.db') {
   const db = new DatabaseSync(path);
@@ -62,6 +64,64 @@ export function openDb(path = 'vaccine.db') {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       expires_at TEXT NOT NULL
     );
+    -- Notifications a health worker sends to the caregiver's app. The app collects them when it
+    -- next checks in (there is no push service), and delivered_at records when that happened.
+    CREATE TABLE IF NOT EXISTS app_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+      worker_id INTEGER REFERENCES workers(id) ON DELETE SET NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      delivered_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_app_notifications_child ON app_notifications(child_id, id);
+    -- Evidence from a caregiver that a dose was given somewhere else, waiting for a health worker
+    -- to check it. One row per child and dose: a resubmission after a rejection updates the row,
+    -- and verification_events keeps every step. "Not submitted" is simply the absence of a row.
+    CREATE TABLE IF NOT EXISTS vaccination_verifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+      dose_code TEXT NOT NULL,
+      vaccination_date TEXT NOT NULL,
+      hospital_name TEXT NOT NULL,
+      doctor_name TEXT NOT NULL,
+      card_document_id INTEGER REFERENCES verification_documents(id) ON DELETE SET NULL,
+      note_document_id INTEGER REFERENCES verification_documents(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'rejected')),
+      submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      submission_count INTEGER NOT NULL DEFAULT 1,
+      reviewed_by INTEGER REFERENCES workers(id) ON DELETE SET NULL,
+      reviewed_at TEXT,
+      rejection_reason TEXT,
+      UNIQUE(child_id, dose_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_verifications_status ON vaccination_verifications(status, submitted_at);
+    -- Uploaded pictures. The file itself is encrypted on disk under storage_name; ref is the random
+    -- id the caregiver's app uses before the picture is attached to a request.
+    CREATE TABLE IF NOT EXISTS verification_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ref TEXT NOT NULL UNIQUE,
+      child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+      verification_id INTEGER REFERENCES vaccination_verifications(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('card', 'note')),
+      mime_type TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      storage_name TEXT NOT NULL UNIQUE,
+      uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_verification_documents_child ON verification_documents(child_id, verification_id);
+    CREATE INDEX IF NOT EXISTS idx_verification_documents_hash ON verification_documents(sha256);
+    -- Audit trail: submitted, resubmitted, approved, rejected. worker_id is null for caregiver steps.
+    CREATE TABLE IF NOT EXISTS verification_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      verification_id INTEGER NOT NULL REFERENCES vaccination_verifications(id) ON DELETE CASCADE,
+      action TEXT NOT NULL,
+      worker_id INTEGER REFERENCES workers(id) ON DELETE SET NULL,
+      detail TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_verification_events ON verification_events(verification_id, id);
   `);
 
   // Columns added after the first version. Adding them here upgrades an existing vaccine.db in place.
@@ -74,6 +134,13 @@ export function openDb(path = 'vaccine.db') {
   addColumn(db, 'children', 'area_lon', 'REAL');
   addColumn(db, 'children', 'area_label', 'TEXT');
   addColumn(db, 'children', 'area_saved_at', 'TEXT');
+  // Last time a caregiver's app checked for notifications for this child, so health workers can
+  // tell whether a notification will reach anyone.
+  addColumn(db, 'children', 'app_seen_at', 'TEXT');
+  // Demo children have made-up phone numbers that may belong to real people: they never get real SMS.
+  addColumn(db, 'children', 'is_demo', 'INTEGER NOT NULL DEFAULT 0');
+  // The hospital nearest the family's home, named in SMS next to the clinic the child is registered at.
+  addColumn(db, 'children', 'nearest_hospital', "TEXT NOT NULL DEFAULT ''");
   purgeExpiredAreas(db);
   db.exec('CREATE INDEX IF NOT EXISTS idx_sms_child ON sms_log(child_id, created_at)');
 

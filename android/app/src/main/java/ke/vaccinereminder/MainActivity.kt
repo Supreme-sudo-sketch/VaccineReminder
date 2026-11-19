@@ -1,7 +1,9 @@
 package ke.vaccinereminder
 
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -37,6 +39,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -48,7 +51,25 @@ class MainActivity : ComponentActivity() {
         val secure = SecureStore(applicationContext)
         VaccineAlerts.sync(applicationContext, secure.loadLookups().isNotEmpty())
         val openCaregiver = intent?.getStringExtra(VaccineAlerts.EXTRA_OPEN) == VaccineAlerts.OPEN_CAREGIVER
-        setContent { App(prefs, secure, openCaregiver) }
+        setContent { App(prefs, secure, openCaregiver, onDarkTheme = ::styleSystemBars) }
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        // Back from the background: collect any notification a health worker sent meanwhile.
+        // (A fresh start does this through VaccineAlerts.sync in onCreate.)
+        if (SecureStore(applicationContext).loadLookups().isNotEmpty()) VaccineAlerts.checkMessagesNow(applicationContext)
+    }
+
+    // Dark icons on the light theme and light icons on the dark one, even when the theme chosen in
+    // Settings differs from the phone's own dark mode setting.
+    private fun styleSystemBars(dark: Boolean) {
+        val scrimLight = Color.argb(0xE6, 0xFF, 0xFF, 0xFF)
+        val scrimDark = Color.argb(0x80, 0x1B, 0x1B, 0x1B)
+        enableEdgeToEdge(
+            statusBarStyle = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = if (dark) SystemBarStyle.dark(scrimDark) else SystemBarStyle.light(scrimLight, scrimDark),
+        )
     }
 }
 
@@ -59,20 +80,38 @@ sealed class Route(val key: String) {
     data object Login : Route("login")
     data object SignUp : Route("signup")
     data object WorkerHome : Route("worker")
-    data object RegisterChild : Route("register")
+    // fromId > 0 registers a twin (twin = true) or a brother or sister of that child, with the
+    // parent's details filled in.
+    data class RegisterChild(val fromId: Int = 0, val twin: Boolean = false) :
+        Route(if (fromId == 0) "register" else if (twin) "register/$fromId/twin" else "register/$fromId/sibling")
     data object Settings : Route("settings")
     data class ChildDetail(val id: Int) : Route("child/$id")
     data class EditChild(val id: Int) : Route("edit/$id")
 
+    // The caregiver's vaccination evidence screen, opened from one child's card (0: no child chosen).
+    // With a dose code it goes straight to the form for that vaccine.
+    data class Verify(val childId: Int, val doseCode: String = "") : Route("verify/$childId/$doseCode")
+    data object VerificationRequests : Route("verifications")
+    data class VerificationDetail(val id: Int) : Route("verification/$id")
+
     // Screens only a signed-in health worker may see.
     val needsWorker: Boolean
-        get() = this is WorkerHome || this is RegisterChild || this is ChildDetail || this is EditChild
+        get() = this is WorkerHome || this is RegisterChild || this is ChildDetail || this is EditChild ||
+            this is VerificationRequests || this is VerificationDetail
 
     companion object {
         fun parse(key: String): Route = when {
             key.startsWith("child/") -> key.removePrefix("child/").toIntOrNull()?.let { ChildDetail(it) } ?: Welcome
             key.startsWith("edit/") -> key.removePrefix("edit/").toIntOrNull()?.let { EditChild(it) } ?: Welcome
-            else -> listOf(Welcome, Caregiver, Nearby, Login, SignUp, WorkerHome, RegisterChild, Settings).firstOrNull { it.key == key } ?: Welcome
+            key.startsWith("register/") -> key.removePrefix("register/").split("/").let { parts ->
+                parts[0].toIntOrNull()?.let { RegisterChild(it, parts.getOrNull(1) == "twin") } ?: Welcome
+            }
+            key.startsWith("verify/") -> key.removePrefix("verify/").split("/").let { parts ->
+                parts[0].toIntOrNull()?.let { Verify(it, parts.getOrElse(1) { "" }) } ?: Welcome
+            }
+            key.startsWith("verification/") -> key.removePrefix("verification/").toIntOrNull()?.let { VerificationDetail(it) } ?: Welcome
+            else -> listOf(Welcome, Caregiver, Nearby, Login, SignUp, WorkerHome, RegisterChild(), Settings, VerificationRequests)
+                .firstOrNull { it.key == key } ?: Welcome
         }
     }
 }
@@ -83,8 +122,11 @@ private val RouteStackSaver = listSaver<SnapshotStateList<Route>, String>(
 )
 
 @Composable
-fun App(prefs: Prefs, secure: SecureStore, openCaregiver: Boolean = false) {
+fun App(prefs: Prefs, secure: SecureStore, openCaregiver: Boolean = false, onDarkTheme: (Boolean) -> Unit = {}) {
     var lang by rememberSaveable { mutableStateOf(Lang.of(prefs.language)) }
+    var themeMode by rememberSaveable { mutableStateOf(ThemeMode.of(prefs.theme)) }
+    val dark = themeMode.isDark()
+    LaunchedEffect(dark) { onDarkTheme(dark) }
     val s = remember(lang) { Strings(lang) }
     val currentStrings by rememberUpdatedState(s)
     var session by remember { mutableStateOf(secure.loadSession()) }
@@ -158,9 +200,22 @@ fun App(prefs: Prefs, secure: SecureStore, openCaregiver: Boolean = false) {
         )
     }
 
+    // Children's records, from the server or, when it cannot be reached, from the copy saved on this phone.
+    val context = LocalContext.current
+    val childRepo = remember { ChildRepository(api, VaccineDatabase.get(context).childDao()) }
+    LaunchedEffect(session) {
+        // Signed out or the session expired: the next health worker on this phone must not see them.
+        if (session == null) childRepo.forgetWorker()
+    }
+
     val setLang: (Lang) -> Unit = {
         lang = it
         prefs.language = it.code
+    }
+
+    val setTheme: (ThemeMode) -> Unit = {
+        themeMode = it
+        prefs.theme = it.code
     }
 
     val current = stack.last()
@@ -168,8 +223,8 @@ fun App(prefs: Prefs, secure: SecureStore, openCaregiver: Boolean = false) {
         if (current.needsWorker && session == null) reset(Route.Welcome, Route.Login)
     }
 
-    AppTheme {
-        CompositionLocalProvider(LocalSnackbar provides snackbar, LocalNotify provides notify) {
+    AppTheme(dark = dark) {
+        CompositionLocalProvider(LocalSnackbar provides snackbar, LocalNotify provides notify, LocalChildren provides childRepo) {
             BackHandler(enabled = stack.size > 1) { pop() }
             Box(
                 Modifier
@@ -201,9 +256,11 @@ fun App(prefs: Prefs, secure: SecureStore, openCaregiver: Boolean = false) {
                                 s = s,
                                 lookupsState = caregiverLookups,
                                 onNearby = { push(Route.Nearby) },
+                                onVerify = { childId, doseCode -> push(Route.Verify(childId, doseCode)) },
                                 onBack = ::pop,
                             )
                             Route.Nearby -> NearbyScreen(api, s, caregiverLookups.value, onBack = ::pop)
+                            is Route.Verify -> CaregiverVerificationScreen(api, s, caregiverLookups.value, route.childId, route.doseCode, onBack = ::pop)
                             Route.Login -> LoginScreen(
                                 api = api,
                                 s = s,
@@ -220,12 +277,28 @@ fun App(prefs: Prefs, secure: SecureStore, openCaregiver: Boolean = false) {
                                     s = s,
                                     worker = worker,
                                     onOpenChild = { push(Route.ChildDetail(it)) },
-                                    onRegister = { push(Route.RegisterChild) },
+                                    onRegister = { push(Route.RegisterChild()) },
                                     onSettings = { push(Route.Settings) },
+                                    onVerifications = { push(Route.VerificationRequests) },
                                 )
                             }
-                            Route.RegisterChild -> if (worker != null) {
-                                ChildFormScreen(api, s, worker, childId = null, onBack = ::pop, onSaved = { replaceTop(Route.ChildDetail(it.id)) })
+                            Route.VerificationRequests -> if (worker != null) {
+                                VerificationRequestsScreen(api, s, onBack = ::pop, onOpen = { push(Route.VerificationDetail(it)) })
+                            }
+                            is Route.VerificationDetail -> if (worker != null) {
+                                VerificationDetailScreen(api, s, route.id, onBack = ::pop, onOpenChild = { push(Route.ChildDetail(it)) })
+                            }
+                            is Route.RegisterChild -> if (worker != null) {
+                                ChildFormScreen(
+                                    api,
+                                    s,
+                                    worker,
+                                    childId = null,
+                                    onBack = ::pop,
+                                    onSaved = { replaceTop(Route.ChildDetail(it.id)) },
+                                    fromChildId = route.fromId.takeIf { it > 0 },
+                                    twin = route.twin,
+                                )
                             }
                             is Route.EditChild -> if (worker != null) {
                                 ChildFormScreen(api, s, worker, childId = route.id, onBack = ::pop, onSaved = { pop() })
@@ -237,6 +310,9 @@ fun App(prefs: Prefs, secure: SecureStore, openCaregiver: Boolean = false) {
                                 onBack = ::pop,
                                 onEdit = { push(Route.EditChild(route.id)) },
                                 onDeleted = ::pop,
+                                onOpenVerification = { push(Route.VerificationDetail(it)) },
+                                onOpenChild = { push(Route.ChildDetail(it)) },
+                                onAddSibling = { twin -> push(Route.RegisterChild(route.id, twin)) },
                             )
                             Route.Settings -> SettingsScreen(
                                 api = api,
@@ -245,6 +321,8 @@ fun App(prefs: Prefs, secure: SecureStore, openCaregiver: Boolean = false) {
                                 s = s,
                                 lang = lang,
                                 onLang = setLang,
+                                theme = themeMode,
+                                onTheme = setTheme,
                                 session = session,
                                 onBack = ::pop,
                                 onSignedOut = ::signOut,

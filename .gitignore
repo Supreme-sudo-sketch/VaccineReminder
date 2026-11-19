@@ -3,3 +3,8 @@ node_modules
 build
 .gradle
 local.properties
+
+.env
+# Vaccination evidence: encrypted medical pictures and their key
+backend/documents/
+document.key

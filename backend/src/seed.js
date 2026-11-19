@@ -10,11 +10,16 @@ export const DEMO_PASSWORD = 'Demo1234';
 export const DEMO_WORKERS = [
   { name: 'Achieng Otieno', phone: '0700000001', facility: 'Kangemi Health Centre' },
   { name: 'Joseph Mwangi', phone: '0700000002', facility: 'Riruta Health Centre' },
+  { name: 'Wanjiru Kamau', phone: '0700000003', facility: 'Kenyatta National Hospital' },
+  { name: 'Halima Abdi', phone: '0700000004', facility: 'Pumwani Maternity Hospital' },
 ];
 
 const BIRTH = ['BCG', 'OPV0'];
 const WEEK6 = ['OPV1', 'PENTA1', 'PCV1', 'ROTA1'];
 const WEEK10 = ['OPV2', 'PENTA2', 'PCV2', 'ROTA2'];
+const WEEK14 = ['OPV3', 'PENTA3', 'PCV3', 'IPV'];
+const MONTH6 = ['VITA'];
+const MONTH9 = ['MR1', 'YF'];
 
 export const DEMO_CHILDREN = [
   {
@@ -131,6 +136,46 @@ export const DEMO_CHILDREN = [
     onTime: true,
     shows: 'Two years old, every vaccine given.',
   },
+  {
+    childName: 'Tumaini Wekesa',
+    caregiverName: 'Mercy Wekesa',
+    phone: '0711000112',
+    ageDays: 0,
+    language: 'sw',
+    worker: 3,
+    given: [],
+    shows: 'Born today at Pumwani. Birth vaccines (BCG, Polio 0) due today.',
+  },
+  {
+    childName: 'Zuri Mohamed',
+    caregiverName: 'Amina Mohamed',
+    phone: '0711000113',
+    ageDays: 98,
+    language: 'sw',
+    worker: 2,
+    given: [[BIRTH, 0], [WEEK6, 42], [WEEK10, 70]],
+    shows: 'Every visit on time. 14-week vaccines due today.',
+  },
+  {
+    childName: 'Ethan Kiprono',
+    caregiverName: 'Caroline Kiprono',
+    phone: '0711000114',
+    ageDays: 268,
+    language: 'en',
+    worker: 2,
+    onTime: true,
+    shows: 'Up to date. Measles-Rubella 1 and Yellow Fever due at 9 months, in a few days.',
+  },
+  {
+    childName: 'Liam Njoroge',
+    caregiverName: 'Faith Njoroge',
+    phone: '0711000115',
+    ageDays: 560,
+    language: 'en',
+    worker: 3,
+    given: [[BIRTH, 0], [WEEK6, 42], [WEEK10, 70], [WEEK14, 98], [MONTH6, 183], [MONTH9, 274]],
+    shows: 'All vaccines on time until Measles-Rubella 2 at 18 months, now about 10 days overdue.',
+  },
 ];
 
 function givenDates(dob, child, today) {
@@ -148,23 +193,23 @@ function givenDates(dob, child, today) {
 
 export async function seedDemo(db, today = todayStr()) {
   const hash = await hashPassword(DEMO_PASSWORD);
-  const workerIds = DEMO_WORKERS.map((w) =>
-    Number(
-      db.prepare('INSERT INTO workers (name, phone, facility, password_hash) VALUES (?, ?, ?, ?)')
-        .run(w.name, normalizePhone(w.phone), w.facility, hash).lastInsertRowid
-    )
-  );
-
   const created = [];
   db.exec('BEGIN');
   try {
+    // Inside the transaction, so a failed run leaves nothing half-added.
+    const workerIds = DEMO_WORKERS.map((w) =>
+      Number(
+        db.prepare('INSERT INTO workers (name, phone, facility, password_hash) VALUES (?, ?, ?, ?)')
+          .run(w.name, normalizePhone(w.phone), w.facility, hash).lastInsertRowid
+      )
+    );
     for (const c of DEMO_CHILDREN) {
       const worker = DEMO_WORKERS[c.worker || 0];
       const dob = addDays(today, -c.ageDays);
       const id = Number(
         db.prepare(
-          `INSERT INTO children (child_name, caregiver_name, phone, dob, language, facility, consent, registered_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO children (child_name, caregiver_name, phone, dob, language, facility, consent, registered_by, created_at, is_demo)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
         ).run(
           c.childName,
           c.caregiverName,
@@ -225,25 +270,54 @@ function clearAll(db) {
   }
 }
 
+// True when the database still holds the demo accounts or children. Their phone numbers are made
+// up but could belong to real people, so live SMS must never go to them.
+// Flags the demo children (found by their made-up numbers) so they never get real SMS. Needed for
+// databases seeded before the flag existed; returns how many demo children there are.
+export function markDemoChildren(db) {
+  const phones = DEMO_CHILDREN.map((c) => normalizePhone(c.phone));
+  const marks = phones.map(() => '?').join(',');
+  db.prepare(`UPDATE children SET is_demo = 1 WHERE is_demo = 0 AND phone IN (${marks})`).run(...phones);
+  return db.prepare('SELECT COUNT(*) AS n FROM children WHERE is_demo = 1').get().n;
+}
+
+export function hasDemoData(db) {
+  const workers = DEMO_WORKERS.map((w) => normalizePhone(w.phone));
+  const children = DEMO_CHILDREN.map((c) => normalizePhone(c.phone));
+  const marks = (list) => list.map(() => '?').join(',');
+  return Boolean(
+    db.prepare(`SELECT 1 FROM workers WHERE phone IN (${marks(workers)})`).get(...workers) ||
+      db.prepare(`SELECT 1 FROM children WHERE phone IN (${marks(children)})`).get(...children)
+  );
+}
+
+// npm run seed                 loads the demo data into an empty database
+// npm run seed -- --add        adds it next to the accounts and children already there
+// npm run seed -- --reset      deletes everything first
+// Demo children are flagged and never get real SMS, so this is safe with live SMS keys set.
 async function main() {
-  if (process.env.AT_API_KEY && process.env.AT_USERNAME !== 'sandbox') {
-    console.error('Refusing to load demo data while live SMS keys are set: the server would text these made-up numbers.');
-    process.exit(1);
-  }
   const path = process.env.DB_PATH || 'vaccine.db';
+  const add = process.argv.includes('--add');
+  const reset = process.argv.includes('--reset');
   const db = openDb(path);
   const existing = db.prepare('SELECT (SELECT COUNT(*) FROM children) + (SELECT COUNT(*) FROM workers) AS n').get().n;
-  if (existing > 0 && !process.argv.includes('--reset')) {
-    console.error(`${path} already has data. Run "npm run seed -- --reset" to delete everything in it and load the demo data.`);
+  if (existing > 0 && !add && !reset) {
+    console.error(
+      `${path} already has data. Run "npm run seed -- --add" to add the demo data next to it, or "npm run seed -- --reset" to delete everything in it and load the demo data.`
+    );
     process.exit(1);
   }
-  if (existing > 0) clearAll(db);
+  if (add && !reset && hasDemoData(db)) {
+    console.error(`${path} already has the demo data. Run "npm run seed -- --reset" to delete everything and load it again with today's dates.`);
+    process.exit(1);
+  }
+  if (existing > 0 && reset) clearAll(db);
 
   const { workers, children } = await seedDemo(db);
   db.close();
 
-  console.log(`Demo data loaded into ${path} for ${todayStr()}. All names and phone numbers are made up.\n`);
-  console.log(`Health worker logins (password for both: ${DEMO_PASSWORD})`);
+  console.log(`Demo data ${add && existing > 0 ? 'added to' : 'loaded into'} ${path} for ${todayStr()}. All names and phone numbers are made up.\n`);
+  console.log(`Health worker logins (password for all: ${DEMO_PASSWORD})`);
   for (const w of workers) console.log(`  ${w.phone}  ${w.name}, ${w.facility}`);
   console.log('\nCaregiver lookups (phone number + child date of birth)');
   for (const c of children) {

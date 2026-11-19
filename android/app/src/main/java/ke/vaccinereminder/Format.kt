@@ -59,6 +59,10 @@ fun formatTimestamp(utc: String?, lang: Lang): String {
     }
 }
 
+// When a saved copy was made (milliseconds since 1970), in Nairobi time.
+fun formatSavedAt(millis: Long, lang: Lang): String =
+    java.time.Instant.ofEpochMilli(millis).atZone(NAIROBI).format(DateTimeFormatter.ofPattern("d MMM, HH:mm", locale(lang)))
+
 fun daysFromToday(iso: String?, today: LocalDate = todayNairobi()): Long? =
     parseIsoDate(iso)?.let { ChronoUnit.DAYS.between(today, it) }
 

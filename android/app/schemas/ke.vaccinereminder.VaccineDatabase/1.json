@@ -1,0 +1,218 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "8cac3112152ec1d0e59203c12eb20b7c",
+    "entities": [
+      {
+        "tableName": "children",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cacheKey` TEXT NOT NULL, `owner` TEXT NOT NULL, `id` INTEGER NOT NULL, `childName` TEXT NOT NULL, `caregiverName` TEXT NOT NULL, `phone` TEXT NOT NULL, `dob` TEXT NOT NULL, `language` TEXT NOT NULL, `facility` TEXT NOT NULL, `nearestHospital` TEXT NOT NULL, `consent` INTEGER NOT NULL, `nextDueDate` TEXT, `overdueCount` INTEGER NOT NULL, `givenCount` INTEGER NOT NULL, `totalCount` INTEGER NOT NULL, `savedAt` INTEGER NOT NULL, PRIMARY KEY(`cacheKey`))",
+        "fields": [
+          {
+            "fieldPath": "cacheKey",
+            "columnName": "cacheKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "childName",
+            "columnName": "childName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "caregiverName",
+            "columnName": "caregiverName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phone",
+            "columnName": "phone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dob",
+            "columnName": "dob",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "facility",
+            "columnName": "facility",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nearestHospital",
+            "columnName": "nearestHospital",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consent",
+            "columnName": "consent",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextDueDate",
+            "columnName": "nextDueDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "overdueCount",
+            "columnName": "overdueCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "givenCount",
+            "columnName": "givenCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalCount",
+            "columnName": "totalCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "savedAt",
+            "columnName": "savedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cacheKey"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_children_owner",
+            "unique": false,
+            "columnNames": [
+              "owner"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_children_owner` ON `${TABLE_NAME}` (`owner`)"
+          }
+        ]
+      },
+      {
+        "tableName": "doses",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`childKey` TEXT NOT NULL, `code` TEXT NOT NULL, `position` INTEGER NOT NULL, `name` TEXT NOT NULL, `milestone` TEXT NOT NULL, `dueDate` TEXT NOT NULL, `givenDate` TEXT, PRIMARY KEY(`childKey`, `code`), FOREIGN KEY(`childKey`) REFERENCES `children`(`cacheKey`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "childKey",
+            "columnName": "childKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "milestone",
+            "columnName": "milestone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueDate",
+            "columnName": "dueDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "givenDate",
+            "columnName": "givenDate",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "childKey",
+            "code"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_doses_childKey",
+            "unique": false,
+            "columnNames": [
+              "childKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_doses_childKey` ON `${TABLE_NAME}` (`childKey`)"
+          },
+          {
+            "name": "index_doses_dueDate",
+            "unique": false,
+            "columnNames": [
+              "dueDate"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_doses_dueDate` ON `${TABLE_NAME}` (`dueDate`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "children",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "childKey"
+            ],
+            "referencedColumns": [
+              "cacheKey"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8cac3112152ec1d0e59203c12eb20b7c')"
+    ]
+  }
+}
